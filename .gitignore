@@ -141,3 +141,27 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+# Expo
+.expo/
+.expo-shared/
+web-build/
+expo-env.d.ts
+
+# Native signing/build files
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Metro bundler cache
+.metro-health-check*
+
+# macOS / Windows OS junk
+.DS_Store
+Thumbs.db
+
+# Editor folders
+.vscode/
+.idea/
