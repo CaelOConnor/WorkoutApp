@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: workoutapp
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: workoutapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://workoutapp:devpassword@postgres:5432/workoutapp
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

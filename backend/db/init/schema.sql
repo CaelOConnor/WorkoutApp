@@ -1,0 +1,30 @@
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE exercises (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  muscle_group VARCHAR(50),
+  created_by INTEGER REFERENCES users(id)
+);
+
+CREATE TABLE workouts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  notes TEXT
+);
+
+CREATE TABLE sets (
+  id SERIAL PRIMARY KEY,
+  workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+  exercise_id INTEGER NOT NULL REFERENCES exercises(id),
+  set_number INTEGER NOT NULL,
+  reps INTEGER NOT NULL,
+  weight NUMERIC(6,2) NOT NULL,
+  unit VARCHAR(4) NOT NULL DEFAULT 'lb'
+);
