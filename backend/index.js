@@ -56,4 +56,4 @@ app.get('/workouts', async (req, res) => {
   res.json(result.rows);
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); // keeping grass green
