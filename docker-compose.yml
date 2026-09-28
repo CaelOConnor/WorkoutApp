@@ -17,6 +17,9 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Supplies JWT_SECRET from backend/.env (not committed). Values under environment: take precedence.
+    env_file:
+      - ./backend/.env
     environment:
       DATABASE_URL: postgres://workoutapp:devpassword@postgres:5432/workoutapp
     depends_on:

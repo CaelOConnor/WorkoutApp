@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Where the .ts sources live and where compiled .js goes.
+    "rootDir": "src",
+    "outDir": "dist",
+
+    // Node-style module handling. Because package.json has "type": "commonjs",
+    // `import` statements are compiled to `require()` calls.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+
+    // Only load the global type packages we actually want (Node's `process`, `console`, etc.).
+    "types": ["node"],
+
+    // The main switch: enables strictNullChecks, noImplicitAny, useUnknownInCatchVariables, and more.
+    "strict": true,
+    // Makes `array[i]` and `obj[key]` return `T | undefined`, since the index may not exist.
+    "noUncheckedIndexedAccess": true,
+    // Every code path in a function must return (or none of them do).
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

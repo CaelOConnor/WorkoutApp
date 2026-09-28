@@ -1,6 +1,7 @@
-const pool = require('./pool');
+import pool from './pool';
 
-const exercises = [
+// A labeled tuple type: each entry is exactly [name, muscleGroup], both strings.
+const exercises: [name: string, muscleGroup: string][] = [
   ['Bench Press', 'Chest'],
   ['Squat', 'Legs'],
   ['Deadlift', 'Back'],
@@ -8,8 +9,7 @@ const exercises = [
   ['Barbell Row', 'Back'],
 ];
 
-async function seed() {
-  // add to backend/db/seed.js, before the exercises loop
+async function seed(): Promise<void> {
   await pool.query(
     `INSERT INTO users (email, password_hash) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING`,
     ['test@example.com', 'placeholder']

@@ -1,0 +1,92 @@
+// Shared data types for the WorkoutApp.
+// This file must not import anything server-only (express, pg, ...) so the mobile app can reuse it later.
+
+// ---------- Primitives ----------
+
+// A union of string literals: only these exact strings are allowed.
+export type WeightUnit = 'lb' | 'kg';
+
+// ---------- Database rows (mirror db/init/schema.sql) ----------
+// These describe what `pg` hands back for each table. Nullable columns are `T | null`.
+// Note: `pg` turns DATE/TIMESTAMP columns into JS `Date` objects, but once sent through
+// res.json() they become ISO strings on the client.
+
+export interface User {
+  id: number;
+  email: string;
+  password_hash: string;
+  created_at: Date;
+}
+
+// Utility type: pick a subset of another type's fields. Safe to send to clients (no password hash).
+export type PublicUser = Pick<User, 'id' | 'email'>;
+
+export interface Exercise {
+  id: number;
+  name: string;
+  muscle_group: string | null;
+  created_by: number | null;
+}
+
+export interface Workout {
+  id: number;
+  user_id: number;
+  date: Date;
+  notes: string | null;
+}
+
+// Named WorkoutSet (not Set) to avoid clashing with JavaScript's built-in Set.
+export interface WorkoutSet {
+  id: number;
+  workout_id: number;
+  exercise_id: number;
+  set_number: number;
+  reps: number;
+  // Postgres NUMERIC comes back from `pg` as a string (e.g. "135.00") so no precision is lost.
+  // Left as string for now to match current API behavior; convert with Number() if needed.
+  weight: string;
+  unit: WeightUnit;
+}
+
+// ---------- API request bodies ----------
+
+export interface NewSetInput {
+  exercise_id: number;
+  set_number: number;
+  reps: number;
+  weight: number;
+  unit?: WeightUnit; // `?` = optional; the server defaults to 'lb'
+}
+
+export interface CreateWorkoutBody {
+  date?: string;
+  notes?: string;
+  sets: NewSetInput[];
+}
+
+export interface AuthBody {
+  email: string;
+  password: string;
+}
+
+// ---------- API responses ----------
+
+export interface ErrorResponse {
+  error: string;
+}
+
+export interface CreateWorkoutResponse {
+  id: number;
+}
+
+// One row of GET /workouts: a set joined with its workout and exercise name.
+// Built from the row types above: pick some fields from each, then add exercise_name.
+export type WorkoutHistoryRow = Pick<Workout, 'id' | 'date' | 'notes'> &
+  Pick<WorkoutSet, 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'> & {
+    exercise_name: string;
+  };
+
+export interface LoginResponse {
+  token: string;
+  email: string;
+}
