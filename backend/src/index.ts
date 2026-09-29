@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
-import { DatabaseError } from 'pg';
+import { DatabaseError, type PoolClient } from 'pg';
 import pool from './db/pool';
 import { isAuthBody, isCreateWorkoutBody } from './validation';
 import type {
@@ -62,9 +62,11 @@ app.post(
       return res.status(400).json({ error: 'Invalid workout body' });
     }
     const { date, notes, sets } = req.body;
-    const client = await pool.connect();
+    // Declared outside the try so catch/finally can see it; stays undefined if connect() fails.
+    let client: PoolClient | undefined;
 
     try {
+      client = await pool.connect();
       await client.query('BEGIN');
 
       const workoutResult = await client.query<Pick<Workout, 'id'>>(
@@ -87,10 +89,19 @@ app.post(
       await client.query('COMMIT');
       return res.status(201).json({ id: workout.id });
     } catch (err: unknown) {
-      await client.query('ROLLBACK');
+      // Here `client` is `PoolClient | undefined`: TypeScript can't know which line threw.
+      if (client) {
+        // Log a failed ROLLBACK (e.g. the connection dropped) but still report the original error.
+        await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
+          console.error('ROLLBACK failed:', rollbackErr);
+        });
+      }
       return res.status(500).json({ error: errorMessage(err) });
     } finally {
-      client.release();
+      // Only release a client we actually acquired.
+      if (client) {
+        client.release();
+      }
     }
   }
 );
