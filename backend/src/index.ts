@@ -1,4 +1,4 @@
-import express, { type Request, type Response } from 'express';
+import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
@@ -23,11 +23,6 @@ function requireEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
-}
-
-// A caught error is `unknown` (JS can throw anything), so narrow before reading `.message`.
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : 'Unknown error';
 }
 
 const JWT_SECRET = requireEnv('JWT_SECRET');
@@ -96,7 +91,8 @@ app.post(
           console.error('ROLLBACK failed:', rollbackErr);
         });
       }
-      return res.status(500).json({ error: errorMessage(err) });
+      console.error('POST /workouts failed:', err);
+      return res.status(500).json({ error: 'Internal server error' });
     } finally {
       // Only release a client we actually acquired.
       if (client) {
@@ -145,7 +141,8 @@ app.post(
       if (err instanceof DatabaseError && err.code === '23505') {
         return res.status(409).json({ error: 'Email already in use' });
       }
-      return res.status(500).json({ error: errorMessage(err) });
+      console.error('POST /auth/signup failed:', err);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
@@ -182,9 +179,23 @@ app.post(
 
       return res.json({ token, email: user.email });
     } catch (err: unknown) {
-      return res.status(500).json({ error: errorMessage(err) });
+      console.error('POST /auth/login failed:', err);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
+
+// Catches anything a route throws or rejects with (e.g. GET /exercises when the DB is down),
+// so clients never see Express's default error page with the message and stack trace.
+// Express only treats a middleware as an error handler if it declares all four parameters.
+const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
+  console.error(`${req.method} ${req.path} failed:`, err);
+  // If the response already started streaming we can't send a new status; let Express close it.
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({ error: 'Internal server error' });
+};
+app.use(errorHandler);
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
