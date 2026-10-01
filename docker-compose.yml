@@ -25,5 +25,25 @@ services:
     depends_on:
       - postgres
 
+  # Throwaway database for backend tests: `docker compose up -d postgres-test`.
+  # The "test" profile keeps it out of a plain `docker compose up`. Data lives in RAM (tmpfs)
+  # and is wiped when the container stops; the test run applies the schema itself.
+  postgres-test:
+    image: postgres:16
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: workoutapp
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: workoutapp_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workoutapp -d workoutapp_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
 volumes:
   pgdata:

@@ -1,0 +1,10 @@
+{
+  // Typechecks tests (and the src files they import) with the same strict settings as the app.
+  // Kept separate so `npm run build` still only compiles src/ into dist/.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": [".", "../src", "../vitest.config.mts"]
+}
