@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import pool from '../src/db/pool';
-import type { PublicUser } from '../src/types/models';
+import type { Exercise, PublicUser } from '../src/types/models';
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
@@ -19,6 +19,19 @@ export async function createUser(email: string, password: string): Promise<Publi
     throw new Error('createUser: insert returned no row');
   }
   return user;
+}
+
+// Inserts an exercise so sets have a real exercise_id to point at (sets.exercise_id is a foreign key).
+export async function createExercise(name: string): Promise<Pick<Exercise, 'id'>> {
+  const result = await pool.query<Pick<Exercise, 'id'>>(
+    'INSERT INTO exercises (name) VALUES ($1) RETURNING id',
+    [name]
+  );
+  const exercise = result.rows[0];
+  if (!exercise) {
+    throw new Error('createExercise: insert returned no row');
+  }
+  return exercise;
 }
 
 export { pool };

@@ -69,6 +69,16 @@ export interface AuthBody {
   password: string;
 }
 
+// ---------- Auth ----------
+
+// What /auth/login signs into the JWT, and what requireAuth reads back out.
+export interface TokenPayload {
+  userId: number;
+}
+
+// The logged-in user, as attached to req.user by requireAuth.
+export type AuthUser = Pick<User, 'id'>;
+
 // ---------- API responses ----------
 
 export interface ErrorResponse {

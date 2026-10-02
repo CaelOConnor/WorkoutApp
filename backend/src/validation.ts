@@ -5,7 +5,7 @@
 // Each one returns `value is X` (a "type predicate"): when it returns true, TypeScript
 // narrows the argument from `unknown` to `X` in the calling code.
 
-import type { AuthBody, CreateWorkoutBody, NewSetInput, WeightUnit } from './types/models';
+import type { AuthBody, CreateWorkoutBody, NewSetInput, TokenPayload, WeightUnit } from './types/models';
 
 // unknown -> Record<string, unknown>
 // `typeof x === 'object'` is also true for null and arrays, so both are ruled out explicitly.
@@ -73,4 +73,11 @@ export function isCreateWorkoutBody(value: unknown): value is CreateWorkoutBody 
 // unknown -> AuthBody
 export function isAuthBody(value: unknown): value is AuthBody {
   return isRecord(value) && isNonEmptyString(value.email) && isNonEmptyString(value.password);
+}
+
+// unknown -> TokenPayload
+// jwt.verify returns `string | JwtPayload`, and JwtPayload allows any extra keys, so it says
+// nothing about userId. A valid signature only proves we signed it, so still check the shape.
+export function isTokenPayload(value: unknown): value is TokenPayload {
+  return isRecord(value) && isPositiveInteger(value.userId);
 }
