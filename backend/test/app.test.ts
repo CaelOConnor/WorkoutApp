@@ -15,6 +15,17 @@ describe('GET /', () => {
 });
 
 describe('POST /workouts', () => {
+  // A valid body, so the only thing wrong with the request is the missing token.
+  // Otherwise a 400 from validation could hide whether auth ran at all.
+  it('returns 401 with { error } when no token is sent', async () => {
+    const res = await request(app)
+      .post('/workouts')
+      .send({ sets: [{ exercise_id: 1, set_number: 1, reps: 5, weight: 135 }] });
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
   // it.each runs the same test once per row, so each bad body shows up as its own result.
   it.each([
     ['no body', undefined],
