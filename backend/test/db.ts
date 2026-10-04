@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import pool from '../src/db/pool';
-import type { Exercise, PublicUser } from '../src/types/models';
+import type { Exercise, PublicUser, Workout } from '../src/types/models';
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
@@ -32,6 +32,28 @@ export async function createExercise(name: string): Promise<Pick<Exercise, 'id'>
     throw new Error('createExercise: insert returned no row');
   }
   return exercise;
+}
+
+// Inserts a workout with one set for the given user. It needs a set because GET /workouts
+// inner-joins sets, so a workout with no sets wouldn't show up in the response at all.
+export async function createWorkout(
+  userId: number,
+  exerciseId: number,
+  notes: string
+): Promise<Pick<Workout, 'id'>> {
+  const result = await pool.query<Pick<Workout, 'id'>>(
+    'INSERT INTO workouts (user_id, notes) VALUES ($1, $2) RETURNING id',
+    [userId, notes]
+  );
+  const workout = result.rows[0];
+  if (!workout) {
+    throw new Error('createWorkout: insert returned no row');
+  }
+  await pool.query(
+    'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, 1, 5, 100)',
+    [workout.id, exerciseId]
+  );
+  return workout;
 }
 
 export { pool };

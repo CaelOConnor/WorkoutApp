@@ -2,8 +2,14 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import app from '../src/app';
 import { authHeader } from './tokens';
-import { createExercise, createUser, pool, resetDb } from './db';
-import type { PublicUser, Workout } from '../src/types/models';
+import { createExercise, createUser, createWorkout, pool, resetDb } from './db';
+import type { PublicUser, Workout, WorkoutHistoryRow } from '../src/types/models';
+
+// At the top level, afterAll runs once after every describe in this file. Inside a describe,
+// it would close the pool when that block finished, before the next block's tests ran.
+afterAll(async () => {
+  await pool.end();
+});
 
 describe('POST /workouts with a valid token', () => {
   // `let` with a type annotation: assigned in beforeEach, read in the tests.
@@ -20,10 +26,6 @@ describe('POST /workouts with a valid token', () => {
     exerciseId = (await createExercise('Squat')).id;
   });
 
-  afterAll(async () => {
-    await pool.end();
-  });
-
   it('saves the workout for the user in the token', async () => {
     const res = await request(app)
       .post('/workouts')
@@ -34,5 +36,32 @@ describe('POST /workouts with a valid token', () => {
     // Check the database directly: the response only has the new id, not who owns it.
     const result = await pool.query<Pick<Workout, 'user_id'>>('SELECT user_id FROM workouts');
     expect(result.rows).toEqual([{ user_id: lifter.id }]);
+  });
+});
+
+describe('GET /workouts with a valid token', () => {
+  let userA: PublicUser;
+  let userB: PublicUser;
+  let workoutA: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    userA = await createUser('a@example.com', 'password');
+    userB = await createUser('b@example.com', 'password');
+    const exerciseId = (await createExercise('Bench')).id;
+    workoutA = await createWorkout(userA.id, exerciseId, "A's workout");
+    await createWorkout(userB.id, exerciseId, "B's workout");
+  });
+
+  it("returns only the token user's workouts", async () => {
+    const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
+
+    expect(res.status).toBe(200);
+    // supertest's res.body is `any`; annotating it as WorkoutHistoryRow[] lets the
+    // callback below be type-checked instead of silently accepting anything.
+    const rows: WorkoutHistoryRow[] = res.body;
+    expect(rows.map((row) => ({ id: row.id, notes: row.notes }))).toEqual([
+      { id: workoutA.id, notes: "A's workout" },
+    ]);
   });
 });

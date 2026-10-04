@@ -94,12 +94,16 @@ app.post(
 );
 
 app.get('/workouts', requireAuth, async (req: Request, res: Response<WorkoutHistoryRow[]>) => {
+  const user = getAuthUser(req);
+  // $1 is a placeholder: pg sends user.id separately from the SQL text, so it can't inject SQL.
   const result = await pool.query<WorkoutHistoryRow>(
     `SELECT w.id, w.date, w.notes, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
      FROM workouts w
      JOIN sets s ON s.workout_id = w.id
      JOIN exercises e ON e.id = s.exercise_id
-     ORDER BY w.date DESC, s.id ASC`
+     WHERE w.user_id = $1
+     ORDER BY w.date DESC, s.id ASC`,
+    [user.id]
   );
   res.json(result.rows);
 });
