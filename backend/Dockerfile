@@ -19,7 +19,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
+COPY migrations ./migrations
 
 EXPOSE 3000
 
-CMD ["node", "dist/index.js"]
+# Apply pending migrations, then start the server. `&&` means a failed migration stops the
+# server from starting; `exec` makes node the main process so `docker stop` signals reach it.
+CMD ["sh", "-c", "node_modules/.bin/node-pg-migrate up && exec node dist/index.js"]

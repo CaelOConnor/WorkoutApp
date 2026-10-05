@@ -10,7 +10,13 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./backend/db/init:/docker-entrypoint-initdb.d
+    # The backend waits for this before starting (see depends_on below). Without it,
+    # depends_on only waits for the container to start, not for Postgres to accept connections.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workoutapp -d workoutapp"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
   backend:
     build: ./backend
@@ -22,12 +28,14 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgres://workoutapp:devpassword@postgres:5432/workoutapp
+    # The backend runs migrations on startup (see backend/Dockerfile), so the database must be ready.
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   # Throwaway database for backend tests: `docker compose up -d postgres-test`.
   # The "test" profile keeps it out of a plain `docker compose up`. Data lives in RAM (tmpfs)
-  # and is wiped when the container stops; the test run applies the schema itself.
+  # and is wiped when the container stops; the test run applies the migrations itself.
   postgres-test:
     image: postgres:16
     profiles: ["test"]
