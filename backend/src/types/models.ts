@@ -6,7 +6,7 @@
 // A union of string literals: only these exact strings are allowed.
 export type WeightUnit = 'lb' | 'kg';
 
-// ---------- Database rows (mirror db/init/schema.sql) ----------
+// ---------- Database rows (mirror backend/migrations/) ----------
 // These describe what `pg` hands back for each table. Nullable columns are `T | null`.
 // Note: `pg` turns DATE/TIMESTAMP columns into JS `Date` objects, but once sent through
 // res.json() they become ISO strings on the client.

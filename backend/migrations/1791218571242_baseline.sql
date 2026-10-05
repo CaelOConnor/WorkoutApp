@@ -1,3 +1,6 @@
+-- Up Migration
+-- The original schema.sql, unchanged. Like every migration, never edit it once it has run.
+
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -28,3 +31,11 @@ CREATE TABLE sets (
   weight NUMERIC(6,2) NOT NULL,
   unit VARCHAR(4) NOT NULL DEFAULT 'lb'
 );
+
+-- Down Migration
+-- Reverse dependency order: a table can't be dropped while another table's foreign key points at it.
+
+DROP TABLE sets;
+DROP TABLE workouts;
+DROP TABLE exercises;
+DROP TABLE users;
