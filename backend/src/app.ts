@@ -82,6 +82,17 @@ app.post(
           console.error('ROLLBACK failed:', rollbackErr);
         });
       }
+      // Checked after ROLLBACK: a failed statement leaves the transaction aborted, and the
+      // client must not go back to the pool in that state.
+      // 23503 = foreign_key_violation. Matching the constraint name too, because a missing
+      // user (workouts.user_id) is also 23503 and isn't the client's fault.
+      if (
+        err instanceof DatabaseError &&
+        err.code === '23503' &&
+        err.constraint === 'sets_exercise_id_fkey'
+      ) {
+        return res.status(400).json({ error: 'Unknown exercise_id' });
+      }
       console.error('POST /workouts failed:', err);
       return res.status(500).json({ error: 'Internal server error' });
     } finally {

@@ -37,6 +37,28 @@ describe('POST /workouts with a valid token', () => {
     const result = await pool.query<Pick<Workout, 'user_id'>>('SELECT user_id FROM workouts');
     expect(result.rows).toEqual([{ user_id: lifter.id }]);
   });
+
+  it('returns 400 and saves nothing when an exercise_id does not exist', async () => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({
+        // The first set is valid, so by the time the second one fails the workout row and
+        // set 1 are already inserted. Only a ROLLBACK leaves the tables empty.
+        sets: [
+          { exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 },
+          { exercise_id: 9999, set_number: 2, reps: 5, weight: 225 },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    // expect.any(String) matches any string, so the test doesn't pin the exact wording.
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const workouts = await pool.query('SELECT id FROM workouts');
+    const sets = await pool.query('SELECT id FROM sets');
+    expect(workouts.rows).toEqual([]);
+    expect(sets.rows).toEqual([]);
+  });
 });
 
 describe('GET /workouts with a valid token', () => {
