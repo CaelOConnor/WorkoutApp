@@ -9,9 +9,9 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [x] `POST /workouts` with an unknown `exercise_id` returns 400 (catches FK violation 23503 on `sets_exercise_id_fkey`, after ROLLBACK).
 
 ## Phase 1: Migrations
-- [ ] Replace the single `schema.sql` setup with a migration tool so the schema can change without losing data. Pick one that fits `pg`, TypeScript, Docker and the test database (recommendation to come when we start).
-- [ ] `docker-compose.yml`: add a Postgres healthcheck; `depends_on` doesn't wait for it to be ready, and migrations will need it.
-- [ ] `seed.ts` has no conflict check, so running it twice duplicates exercises.
+- [x] node-pg-migrate with plain-SQL migrations in `backend/migrations/`; `schema.sql` became the baseline. Tests and Docker startup run the migrations.
+- [x] `docker-compose.yml`: Postgres healthcheck; the backend waits for it before migrating.
+- [x] Seed is safe to rerun (unique index on `exercises (created_by, name)` + `ON CONFLICT DO NOTHING`).
 
 ## Phase 2: Edit and delete API (TDD)
 - [ ] Get one workout, edit a workout, delete a workout, edit or delete a single set.
