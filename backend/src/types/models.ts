@@ -96,6 +96,20 @@ export type WorkoutHistoryRow = Pick<Workout, 'id' | 'date' | 'notes'> &
     exercise_name: string;
   };
 
+// One set inside a WorkoutDetail. No workout_id: it's nested under its workout already.
+export type WorkoutDetailSet = Pick<
+  WorkoutSet,
+  'id' | 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'
+> & {
+  exercise_name: string;
+};
+
+// GET /workouts/:id: one workout with its sets nested, ordered by set_number.
+// No user_id: the caller can only ever see their own workouts, so it would add nothing.
+export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {
+  sets: WorkoutDetailSet[];
+};
+
 export interface LoginResponse {
   token: string;
   email: string;

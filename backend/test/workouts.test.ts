@@ -2,8 +2,14 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import app from '../src/app';
 import { authHeader } from './tokens';
-import { createExercise, createUser, createWorkout, pool, resetDb } from './db';
-import type { PublicUser, Workout, WorkoutHistoryRow } from '../src/types/models';
+import { addSet, createExercise, createUser, createWorkout, pool, resetDb } from './db';
+import type {
+  PublicUser,
+  Workout,
+  WorkoutDetail,
+  WorkoutHistoryRow,
+  WorkoutSet,
+} from '../src/types/models';
 
 // At the top level, afterAll runs once after every describe in this file. Inside a describe,
 // it would close the pool when that block finished, before the next block's tests ran.
@@ -85,5 +91,96 @@ describe('GET /workouts with a valid token', () => {
     expect(rows.map((row) => ({ id: row.id, notes: row.notes }))).toEqual([
       { id: workoutA.id, notes: "A's workout" },
     ]);
+  });
+});
+
+describe('GET /workouts/:id with a valid token', () => {
+  let lifter: PublicUser;
+  let squatId: number;
+  let benchId: number;
+  let workout: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    benchId = (await createExercise('Bench')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100).
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+  });
+
+  it("returns the token user's workout with its sets nested, ordered by set_number", async () => {
+    // Inserted out of order (3 before 2), so ordering by insertion or by id would fail the test.
+    const set3 = await addSet(workout.id, benchId, 3, 8, 60);
+    const set2 = await addSet(workout.id, squatId, 2, 3, 120.5);
+    // createWorkout doesn't return its set's id, so look it up.
+    const set1Result = await pool.query<Pick<WorkoutSet, 'id'>>(
+      'SELECT id FROM sets WHERE workout_id = $1 AND set_number = 1',
+      [workout.id]
+    );
+    const set1 = set1Result.rows[0];
+
+    const res = await request(app)
+      .get(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(200);
+    // Annotated so the expected object is checked against the type: a typo in a key is a compile error.
+    const expected: WorkoutDetail = {
+      id: workout.id,
+      // DATE goes through a JS Date and then JSON, so the exact string depends on the server's
+      // time zone. Asserting only that it's a string keeps the test from depending on that.
+      date: expect.any(String),
+      notes: 'Leg day',
+      sets: [
+        // NUMERIC(6,2) comes back as a string, so weights are '100.00', not 100.
+        { id: set1?.id ?? -1, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+        { id: set2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: '120.50', unit: 'lb' },
+        { id: set3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 8, weight: '60.00', unit: 'lb' },
+      ],
+    };
+    expect(res.body).toEqual(expected);
+  });
+
+  it("returns 404 for another user's workout", async () => {
+    const intruder = await createUser('intruder@example.com', 'password');
+
+    const res = await request(app)
+      .get(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(intruder.id));
+
+    // 404, not 403: a 403 would confirm the workout exists, which leaks information.
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it("returns 404 for an id that doesn't exist", async () => {
+    // resetDb restarts ids at 1 and only one workout exists, so 999999 is unused.
+    const res = await request(app).get('/workouts/999999').set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  // Each value is a string Express would happily put in req.params.id.
+  // '2147483648' is one past the largest Postgres INTEGER, to pin the exact boundary.
+  it.each(['abc', '0', '-1', '1.5', '1e3', '99999999999', '2147483648'])(
+    'returns 400 for id %s',
+    async (id) => {
+      const res = await request(app).get(`/workouts/${id}`).set('Authorization', authHeader(lifter.id));
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: expect.any(String) });
+    }
+  );
+
+  // The other side of the boundary: the largest INTEGER is a valid id. No workout has it,
+  // so 404 shows the id got past parseId and reached the query (and Postgres accepted it).
+  it('accepts the largest Postgres integer as an id', async () => {
+    const res = await request(app)
+      .get('/workouts/2147483647')
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
   });
 });

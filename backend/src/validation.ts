@@ -1,4 +1,4 @@
-// Runtime type guards for request bodies.
+// Runtime type guards for request bodies, plus parseId for URL params.
 //
 // TypeScript types disappear when the code is compiled, so nothing checks that a client
 // actually sent a CreateWorkoutBody. These functions do that check at runtime.
@@ -73,6 +73,23 @@ export function isCreateWorkoutBody(value: unknown): value is CreateWorkoutBody 
 // unknown -> AuthBody
 export function isAuthBody(value: unknown): value is AuthBody {
   return isRecord(value) && isNonEmptyString(value.email) && isNonEmptyString(value.password);
+}
+
+// Largest value a Postgres INTEGER (and so a SERIAL id) can hold.
+const MAX_PG_INTEGER = 2_147_483_647;
+
+// string -> number | null, for ids in URL params like /workouts/:id.
+// Route params are always strings, so this converts as well as checks. That's why it returns
+// the number (or null) instead of being a `value is X` guard: a guard can only narrow the
+// type of the value it was given, not hand back a different value.
+// The regex allows only digits with no leading zero, which rules out '', '0', '-1', '1.5',
+// '1e3' and ' 7', all of which Number() would otherwise turn into some number or other.
+export function parseId(value: string): number | null {
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    return null;
+  }
+  const id = Number(value);
+  return id <= MAX_PG_INTEGER ? id : null;
 }
 
 // unknown -> TokenPayload

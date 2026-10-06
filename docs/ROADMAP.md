@@ -17,7 +17,7 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [ ] Get one workout, edit a workout, delete a workout, edit or delete a single set.
 - [ ] `GET /workouts` uses an inner `JOIN`, so a workout with no sets disappears, and `sets: []` is accepted. Decide which to fix (deleting the last set makes this matter).
 - [ ] Signup: no email format or minimum password length check.
-- [ ] All routes are in `app.ts`. Notes.md plans routes → controllers → services → repositories; split when the new routes make it hurt.
+- [x] Split routes out of `app.ts` into `express.Router` files in `src/routes/` (auth, workouts, exercises, health). `requireAuth` runs on the whole workouts router.
 
 ## Phase 3: App screens
 - [ ] Log today's workout; history list grouped by week; workout detail with edit/delete.
@@ -26,6 +26,7 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 
 ## Phase 4: Progress charts
 - [ ] Weight as a number: `pg` returns `NUMERIC` as a string (`"135.00"`). Parse it (or register a pg type parser) and change `WorkoutSet.weight` to `number`.
+- [ ] DATE time zone: `pg` turns a `DATE` into a JS `Date` at local midnight, then `res.json` sends it as a UTC ISO string, so the day can shift depending on the server's time zone. Return `'YYYY-MM-DD'` instead (pg type parser for OID 1082, or `to_char` in SQL) and change `Workout.date` to `string`. Then tighten the `date: expect.any(String)` assertion in the `GET /workouts/:id` test.
 - [ ] Endpoint for one exercise's progress over time (e.g. top weight or volume per date).
 - [ ] Chart screen (Victory Native or react-native-gifted-charts, per Notes.md).
 
@@ -39,3 +40,4 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - Publish to the App Store and Google Play.
 - Move config like `JWT_SECRET` into `src/config.ts`.
 - Linting on the backend.
+- Split routes further into controllers → services → repositories (per Notes.md), only if route files get hard to work with.

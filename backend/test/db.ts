@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import pool from '../src/db/pool';
-import type { Exercise, PublicUser, Workout } from '../src/types/models';
+import type { Exercise, PublicUser, Workout, WorkoutSet } from '../src/types/models';
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
@@ -54,6 +54,25 @@ export async function createWorkout(
     [workout.id, exerciseId]
   );
   return workout;
+}
+
+// Adds one more set to an existing workout, for tests that need several sets.
+export async function addSet(
+  workoutId: number,
+  exerciseId: number,
+  setNumber: number,
+  reps: number,
+  weight: number
+): Promise<Pick<WorkoutSet, 'id'>> {
+  const result = await pool.query<Pick<WorkoutSet, 'id'>>(
+    'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    [workoutId, exerciseId, setNumber, reps, weight]
+  );
+  const set = result.rows[0];
+  if (!set) {
+    throw new Error('addSet: insert returned no row');
+  }
+  return set;
 }
 
 export { pool };

@@ -13,7 +13,8 @@ Workout tracker: log sets (exercise, reps, weight) and chart progress over time.
 ## Layout
 ```
 backend/
-  src/app.ts            Express app and routes (exported, no listen)
+  src/app.ts            Express app: middleware, routers, error handler (exported, no listen)
+  src/routes/           express.Router per area: auth, workouts, exercises, health
   src/index.ts          Entry point: app.listen
   src/validation.ts     Runtime type guards for request bodies
   src/types/models.ts   Shared types (no server-only imports; mobile will reuse)
@@ -36,6 +37,7 @@ docs/ROADMAP.md         Known next tasks
 
 ## Working rules
 - **Never commit or push.** The user reviews and commits.
+- **Ask before any git command that changes the working tree, index, or history** (e.g. `stash`, `reset`, `checkout`, `restore`, `rm`, `commit`). Read-only commands like `status`, `diff`, and `log` are fine.
 - **TDD**: write a failing test first, run it to see it fail, then write the code to pass it.
 - **Strict TypeScript, no `any`.** Accept `unknown` and narrow it (see `validation.ts`).
 - **Learning project**: explain TypeScript and testing concepts as you go, briefly, in replies and short code comments.

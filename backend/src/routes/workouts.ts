@@ -2,8 +2,15 @@ import { Router, type Request, type Response } from 'express';
 import { DatabaseError, type PoolClient } from 'pg';
 import pool from '../db/pool';
 import { getAuthUser, requireAuth } from '../middleware/auth';
-import { isCreateWorkoutBody } from '../validation';
-import type { CreateWorkoutResponse, ErrorResponse, Workout, WorkoutHistoryRow } from '../types/models';
+import { isCreateWorkoutBody, parseId } from '../validation';
+import type {
+  CreateWorkoutResponse,
+  ErrorResponse,
+  Workout,
+  WorkoutDetail,
+  WorkoutDetailSet,
+  WorkoutHistoryRow,
+} from '../types/models';
 import type { NoParams } from './types';
 
 // Mounted at /workouts in app.ts, so '/' here is /workouts.
@@ -96,5 +103,46 @@ workoutsRouter.get('/', async (req: Request, res: Response<WorkoutHistoryRow[]>)
   );
   res.json(result.rows);
 });
+
+// ':id' is a route param: Express matches any single path segment there and puts it in
+// req.params.id. The first generic on Request types req.params. It's always a string, because
+// it's cut out of the URL text; Express never converts it.
+workoutsRouter.get(
+  '/:id',
+  async (
+    req: Request<{ id: string }, WorkoutDetail | ErrorResponse>,
+    res: Response<WorkoutDetail | ErrorResponse>
+  ) => {
+    // Checked before any query: a malformed id is the client's mistake (400), and Postgres
+    // would otherwise reject it with an error that turns into a 500.
+    const id = parseId(req.params.id);
+    if (id === null) {
+      return res.status(400).json({ error: 'Invalid workout id' });
+    }
+    const user = getAuthUser(req);
+    // Filtering on user_id in SQL means another user's workout simply isn't found, so it gets
+    // the same 404 as a missing id and the response can't reveal that it exists.
+    const workoutResult = await pool.query<Pick<Workout, 'id' | 'date' | 'notes'>>(
+      'SELECT id, date, notes FROM workouts WHERE id = $1 AND user_id = $2',
+      [id, user.id]
+    );
+    const workout = workoutResult.rows[0];
+    if (!workout) {
+      return res.status(404).json({ error: 'Workout not found' });
+    }
+
+    const setsResult = await pool.query<WorkoutDetailSet>(
+      `SELECT s.id, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
+       FROM sets s
+       JOIN exercises e ON e.id = s.exercise_id
+       WHERE s.workout_id = $1
+       ORDER BY s.set_number ASC`,
+      [workout.id]
+    );
+
+    // Spread copies the workout's fields into a new object, then sets is added alongside them.
+    return res.json({ ...workout, sets: setsResult.rows });
+  }
+);
 
 export default workoutsRouter;
