@@ -206,4 +206,23 @@ workoutsRouter.patch(
   }
 );
 
+// Response<ErrorResponse> types the 404 body; the 204 has no body, so end() needs no type.
+workoutsRouter.delete('/:id', async (req: Request<{ id: string }>, res: Response<ErrorResponse>) => {
+  const id = parseId(req.params.id);
+  if (id === null) {
+    return res.status(400).json({ error: 'Invalid workout id' });
+  }
+  const user = getAuthUser(req);
+  // Same ownership rule as GET and PATCH: another user's workout matches no row, so nothing is
+  // deleted and it gets the same 404 as a missing id. The cascade on sets.workout_id removes
+  // the workout's sets along with it.
+  const result = await pool.query('DELETE FROM workouts WHERE id = $1 AND user_id = $2', [id, user.id]);
+  // rowCount is how many rows were deleted: 0 means no workout of this user's has that id.
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: 'Workout not found' });
+  }
+  // 204 No Content: success with nothing to send back. end() finishes the response without a body.
+  return res.status(204).end();
+});
+
 export default workoutsRouter;

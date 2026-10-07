@@ -377,3 +377,93 @@ describe('PATCH /workouts/:id with a valid token', () => {
     expect(saved.rows).toEqual([{ date }]);
   });
 });
+
+describe('DELETE /workouts/:id with a valid token', () => {
+  let lifter: PublicUser;
+  let squatId: number;
+  let workout: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100).
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+  });
+
+  it('deletes the workout and returns 204 with no body', async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(204);
+    // 204 No Content means the response has no body at all, so the raw text is empty.
+    expect(res.text).toBe('');
+    // Checked through the API rather than the table: the client-visible result is that it's gone.
+    const after = await request(app)
+      .get(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    expect(after.status).toBe(404);
+  });
+
+  it("deletes the workout's sets too", async () => {
+    await addSet(workout.id, squatId, 2, 3, 120);
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(204);
+    // No API route lists sets on their own, so check the table: orphaned sets would be invisible otherwise.
+    const sets = await pool.query('SELECT id FROM sets WHERE workout_id = $1', [workout.id]);
+    expect(sets.rows).toEqual([]);
+  });
+
+  it("returns 404 for an id that doesn't exist", async () => {
+    // resetDb restarts ids at 1 and only one workout exists, so 999999 is unused.
+    const res = await request(app).delete('/workouts/999999').set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it('returns 404 when the same workout is deleted twice', async () => {
+    const first = await request(app)
+      .delete(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    const second = await request(app)
+      .delete(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(first.status).toBe(204);
+    // The second call finds nothing to delete, so it reports that rather than a second success.
+    expect(second.status).toBe(404);
+    expect(second.body).toEqual({ error: expect.any(String) });
+  });
+
+  it("returns 404 for another user's workout and leaves it and its sets in place", async () => {
+    const intruder = await createUser('intruder@example.com', 'password');
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(intruder.id));
+
+    // 404, not 403, so the intruder can't tell the workout exists.
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const workouts = await pool.query('SELECT id FROM workouts WHERE id = $1', [workout.id]);
+    const sets = await pool.query('SELECT id FROM sets WHERE workout_id = $1', [workout.id]);
+    expect(workouts.rows).toHaveLength(1);
+    expect(sets.rows).toHaveLength(1);
+  });
+
+  it.each(['abc', '0', '-1', '1.5', '1e3', '99999999999', '2147483648'])(
+    'returns 400 for id %s',
+    async (id) => {
+      const res = await request(app).delete(`/workouts/${id}`).set('Authorization', authHeader(lifter.id));
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: expect.any(String) });
+    }
+  );
+});
