@@ -5,7 +5,14 @@
 // Each one returns `value is X` (a "type predicate"): when it returns true, TypeScript
 // narrows the argument from `unknown` to `X` in the calling code.
 
-import type { AuthBody, CreateWorkoutBody, NewSetInput, TokenPayload, WeightUnit } from './types/models';
+import type {
+  AuthBody,
+  CreateWorkoutBody,
+  NewSetInput,
+  TokenPayload,
+  UpdateWorkoutBody,
+  WeightUnit,
+} from './types/models';
 
 // unknown -> Record<string, unknown>
 // `typeof x === 'object'` is also true for null and arrays, so both are ruled out explicitly.
@@ -67,6 +74,23 @@ export function isCreateWorkoutBody(value: unknown): value is CreateWorkoutBody 
     (value.notes === undefined || typeof value.notes === 'string') &&
     Array.isArray(value.sets) &&
     value.sets.every(isNewSetInput)
+  );
+}
+
+const UPDATE_WORKOUT_KEYS = ['date', 'notes'];
+
+// unknown -> UpdateWorkoutBody
+// A missing key reads as undefined, which is allowed for each field, but at least one must be
+// present: an empty update has nothing to change (and would build an empty SET clause).
+// Unlike the POST guard, extra keys are rejected, so a typo or a field like user_id can't be
+// silently ignored.
+export function isUpdateWorkoutBody(value: unknown): value is UpdateWorkoutBody {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) => UPDATE_WORKOUT_KEYS.includes(key)) &&
+    (value.date !== undefined || value.notes !== undefined) &&
+    (value.date === undefined || isDateString(value.date)) &&
+    (value.notes === undefined || value.notes === null || typeof value.notes === 'string')
   );
 }
 

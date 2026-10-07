@@ -184,3 +184,123 @@ describe('GET /workouts/:id with a valid token', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('PATCH /workouts/:id with a valid token', () => {
+  let lifter: PublicUser;
+  let squatId: number;
+  let workout: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100).
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+  });
+
+  it('updates the notes, returns the updated workout, and saves it', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ notes: 'Heavy leg day' });
+
+    expect(res.status).toBe(200);
+    // Same shape as GET /workouts/:id, so a client can use either response the same way.
+    const expected: WorkoutDetail = {
+      id: workout.id,
+      date: expect.any(String),
+      notes: 'Heavy leg day',
+      sets: [
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+      ],
+    };
+    expect(res.body).toEqual(expected);
+    // The response alone could be built from the request body without writing anything,
+    // so check the row too.
+    const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
+    expect(saved.rows).toEqual([{ notes: 'Heavy leg day' }]);
+  });
+
+  it('updates only the date when notes is missing, leaving notes unchanged', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ date: '2026-09-01' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: workout.id, notes: 'Leg day' });
+    // date::text makes Postgres format the DATE itself ('YYYY-MM-DD'), so the check doesn't
+    // depend on how a JS Date converts it in this machine's time zone.
+    const saved = await pool.query<{ date: string; notes: string | null }>(
+      'SELECT date::text AS date, notes FROM workouts WHERE id = $1',
+      [workout.id]
+    );
+    expect(saved.rows).toEqual([{ date: '2026-09-01', notes: 'Leg day' }]);
+  });
+
+  // null is a real JSON value meaning "set to empty", unlike a missing key, which means "don't touch".
+  it('clears the notes when notes is null', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ notes: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: workout.id, notes: null });
+    const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
+    expect(saved.rows).toEqual([{ notes: null }]);
+  });
+
+  it("returns 404 for another user's workout and leaves it unchanged", async () => {
+    const intruder = await createUser('intruder@example.com', 'password');
+
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(intruder.id))
+      .send({ notes: 'hacked' });
+
+    // Same 404 as a missing id, so the response doesn't confirm the workout exists.
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    // The status alone isn't enough: a route could write first and 404 afterwards.
+    const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
+    expect(saved.rows).toEqual([{ notes: 'Leg day' }]);
+  });
+
+  // Same ids as the GET tests. The body is valid, so only the id can cause the 400.
+  it.each(['abc', '0', '-1', '1.5', '1e3', '99999999999', '2147483648'])(
+    'returns 400 for id %s',
+    async (id) => {
+      const res = await request(app)
+        .patch(`/workouts/${id}`)
+        .set('Authorization', authHeader(lifter.id))
+        .send({ notes: 'x' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: expect.any(String) });
+    }
+  );
+
+  it.each([
+    // Nothing to change, which is almost certainly a client bug, so say so instead of a no-op 200.
+    ['an empty object', {}],
+    ['notes as a number', { notes: 5 }],
+    ['an unparseable date', { date: 'not-a-date' }],
+    // date is NOT NULL, so unlike notes it can't be cleared.
+    ['a null date', { date: null }],
+    // Unknown keys are rejected rather than ignored: a typo like `note` would otherwise be a
+    // silent no-op, and fields like user_id must never look editable.
+    ['an unknown field alongside a valid one', { notes: 'x', user_id: 2 }],
+    ['sets, which have their own routes', { notes: 'x', sets: [] }],
+  ])('returns 400 and changes nothing for %s', async (_label, body) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
+    expect(saved.rows).toEqual([{ notes: 'Leg day' }]);
+  });
+});

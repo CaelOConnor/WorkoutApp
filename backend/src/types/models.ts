@@ -64,6 +64,14 @@ export interface CreateWorkoutBody {
   sets: NewSetInput[];
 }
 
+// PATCH /workouts/:id. Both optional: a missing key means "leave that column alone".
+export interface UpdateWorkoutBody {
+  date?: string;
+  // `?` allows the key to be missing; `| null` allows an explicit null, which clears the notes.
+  // date has no `| null` because the column is NOT NULL.
+  notes?: string | null;
+}
+
 export interface AuthBody {
   email: string;
   password: string;
