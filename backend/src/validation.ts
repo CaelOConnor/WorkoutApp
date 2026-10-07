@@ -45,9 +45,25 @@ function isWeightUnit(value: unknown): value is WeightUnit {
   return value === 'lb' || value === 'kg';
 }
 
-// A valid date string: Date.parse returns NaN for strings it can't read.
+// Exactly YYYY-MM-DD: ^ and $ anchor both ends, so nothing may come before or after.
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// unknown -> string in YYYY-MM-DD form that names a real calendar day.
+// Date.parse alone isn't enough: it reads many formats ('10/07/2026', timestamps), and it rolls
+// impossible days over ('2026-02-30' becomes March 2) instead of rejecting them.
 function isDateString(value: unknown): value is string {
-  return typeof value === 'string' && !Number.isNaN(Date.parse(value));
+  // Year 0000 fits the pattern and JS accepts it, but Postgres has no year 0 (1 BC is
+  // followed directly by AD 1).
+  if (typeof value !== 'string' || !DATE_PATTERN.test(value) || value.startsWith('0000')) {
+    return false;
+  }
+  // Calendar check by round trip: parse as UTC midnight, then format back to YYYY-MM-DD.
+  // A real day comes back unchanged; an impossible one has rolled over and comes back different.
+  // The 'Z' (UTC) stops the local time zone from shifting the result onto another day.
+  const date = new Date(`${value}T00:00:00Z`);
+  // Some impossible values (month 13, day 00) give an Invalid Date instead of rolling over,
+  // and toISOString() throws on those, so check first.
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 // unknown -> NewSetInput

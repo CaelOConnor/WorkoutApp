@@ -17,6 +17,28 @@ afterAll(async () => {
   await pool.end();
 });
 
+// Dates both routes must reject. Before strict validation, each one either reached Postgres and
+// failed there (a 500), or was accepted by both JS and Postgres (a silent wrong 201/200).
+const INVALID_DATES = [
+  // Date.parse rolls these over to the next month; Postgres rejects them (500).
+  '2026-02-29', // 2026 isn't a leap year
+  '2026-02-30',
+  '2026-04-31',
+  '1900-02-29', // divisible by 100 but not 400, so not a leap year
+  '0000-01-01', // JS has a year 0; Postgres (like the calendar) doesn't
+  '+002026-10-07', // JS's extended-year format
+  // Both accept these, so the wrong format was stored without complaint (201/200).
+  '10/07/2026', // Postgres reads it month-first; a DD/MM client meant 10 July
+  'October 7, 2026',
+  '2026-10-07T12:00:00Z', // a timestamp, not a date
+  '2026-1-7', // missing zero padding
+  ' 2026-10-07', // leading space
+];
+
+// Real leap days, so a check that's too strict (e.g. rejecting every Feb 29) fails.
+// 2000 is divisible by 400, so it's a leap year despite being a century.
+const VALID_LEAP_DAYS = ['2024-02-29', '2000-02-29'];
+
 describe('POST /workouts with a valid token', () => {
   // `let` with a type annotation: assigned in beforeEach, read in the tests.
   let lifter: PublicUser;
@@ -64,6 +86,31 @@ describe('POST /workouts with a valid token', () => {
     const sets = await pool.query('SELECT id FROM sets');
     expect(workouts.rows).toEqual([]);
     expect(sets.rows).toEqual([]);
+  });
+
+  // JSON.stringify in the title makes ' 2026-10-07' show its leading space in the output.
+  it.each(INVALID_DATES)('returns 400 and saves nothing for date %j', async (date) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ date, sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const workouts = await pool.query('SELECT id FROM workouts');
+    expect(workouts.rows).toEqual([]);
+  });
+
+  it.each(VALID_LEAP_DAYS)('saves the leap day %s', async (date) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ date, sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 }] });
+
+    expect(res.status).toBe(201);
+    // date::text lets Postgres format the DATE, avoiding JS time-zone conversion.
+    const saved = await pool.query<{ date: string }>('SELECT date::text AS date FROM workouts');
+    expect(saved.rows).toEqual([{ date }]);
   });
 });
 
@@ -302,5 +349,31 @@ describe('PATCH /workouts/:id with a valid token', () => {
     expect(res.body).toEqual({ error: expect.any(String) });
     const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
     expect(saved.rows).toEqual([{ notes: 'Leg day' }]);
+  });
+
+  it.each(INVALID_DATES)('returns 400 and leaves the date unchanged for date %j', async (date) => {
+    // The workout's date is the column default (today), so read it rather than hard-code it.
+    const before = await pool.query<{ date: string }>('SELECT date::text AS date FROM workouts WHERE id = $1', [workout.id]);
+
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ date });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const after = await pool.query<{ date: string }>('SELECT date::text AS date FROM workouts WHERE id = $1', [workout.id]);
+    expect(after.rows).toEqual(before.rows);
+  });
+
+  it.each(VALID_LEAP_DAYS)('updates the date to the leap day %s', async (date) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ date });
+
+    expect(res.status).toBe(200);
+    const saved = await pool.query<{ date: string }>('SELECT date::text AS date FROM workouts WHERE id = $1', [workout.id]);
+    expect(saved.rows).toEqual([{ date }]);
   });
 });
