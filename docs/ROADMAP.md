@@ -14,8 +14,11 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [x] Seed is safe to rerun (unique index on `exercises (created_by, name)` + `ON CONFLICT DO NOTHING`).
 
 ## Phase 2: Edit and delete API (TDD)
-- [ ] Get one workout, edit a workout, delete a workout, edit or delete a single set.
-- [ ] `GET /workouts` uses an inner `JOIN`, so a workout with no sets disappears, and `sets: []` is accepted. Decide which to fix (deleting the last set makes this matter).
+- [x] Get one workout, edit a workout, delete a workout, edit or delete a single set (`PATCH`/`DELETE /workouts/:id/sets/:setId`, nested router in `src/routes/sets.ts`).
+- [x] Empty workouts are allowed: `GET /workouts` now `LEFT JOIN`s, so a workout with no sets is one row with every set column `null`; `GET /workouts/:id` gives `sets: []`.
+- [ ] No route adds a set to an existing workout (`POST /workouts/:id/sets`), so an emptied workout can't be refilled yet.
+- [ ] Weight ≥ 10000 is a 500 (Postgres `NUMERIC(6,2)` overflow) on `POST /workouts` and `PATCH .../sets/:setId`. Add an upper bound to the guards.
+- [ ] `set_number` is client-supplied with no uniqueness or contiguity; deleting a set leaves gaps (1, 3) and duplicates are possible. Decide when adding/reordering sets in the app.
 - [ ] Signup: no email format or minimum password length check.
 - [x] Split routes out of `app.ts` into `express.Router` files in `src/routes/` (auth, workouts, exercises, health). `requireAuth` runs on the whole workouts router.
 

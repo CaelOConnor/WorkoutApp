@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
-import { DatabaseError, type PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import pool from '../db/pool';
+import { isUnknownExerciseError } from '../db/errors';
+import { loadWorkoutDetail } from '../db/workoutDetail';
 import { getAuthUser, requireAuth } from '../middleware/auth';
 import { isCreateWorkoutBody, isUpdateWorkoutBody, parseId } from '../validation';
 import type {
@@ -8,10 +10,10 @@ import type {
   ErrorResponse,
   Workout,
   WorkoutDetail,
-  WorkoutDetailSet,
   WorkoutHistoryRow,
 } from '../types/models';
 import type { NoParams } from './types';
+import setsRouter from './sets';
 
 // Mounted at /workouts in app.ts, so '/' here is /workouts.
 const workoutsRouter = Router();
@@ -20,6 +22,11 @@ const workoutsRouter = Router();
 // being repeated on each route. Middleware added with use() runs in order, so this must come
 // before the routes. It only sees requests under /workouts, since that's where the router is mounted.
 workoutsRouter.use(requireAuth);
+
+// Routes for one set live in their own router (src/routes/sets.ts). Mounted after requireAuth,
+// so they're covered by it too. '/:id/sets' only matches paths with /sets after the id, so it
+// doesn't clash with the '/:id' routes below.
+workoutsRouter.use('/:id/sets', setsRouter);
 
 workoutsRouter.post(
   '/',
@@ -69,13 +76,7 @@ workoutsRouter.post(
       }
       // Checked after ROLLBACK: a failed statement leaves the transaction aborted, and the
       // client must not go back to the pool in that state.
-      // 23503 = foreign_key_violation. Matching the constraint name too, because a missing
-      // user (workouts.user_id) is also 23503 and isn't the client's fault.
-      if (
-        err instanceof DatabaseError &&
-        err.code === '23503' &&
-        err.constraint === 'sets_exercise_id_fkey'
-      ) {
+      if (isUnknownExerciseError(err)) {
         return res.status(400).json({ error: 'Unknown exercise_id' });
       }
       console.error('POST /workouts failed:', err);
@@ -92,43 +93,20 @@ workoutsRouter.post(
 workoutsRouter.get('/', async (req: Request, res: Response<WorkoutHistoryRow[]>) => {
   const user = getAuthUser(req);
   // $1 is a placeholder: pg sends user.id separately from the SQL text, so it can't inject SQL.
+  // LEFT JOIN keeps a workout with no sets: it comes back as one row with every set column null.
+  // Both joins must be LEFT: an inner join to exercises would compare e.id to that null
+  // exercise_id, match nothing, and drop the row again.
   const result = await pool.query<WorkoutHistoryRow>(
     `SELECT w.id, w.date, w.notes, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
      FROM workouts w
-     JOIN sets s ON s.workout_id = w.id
-     JOIN exercises e ON e.id = s.exercise_id
+     LEFT JOIN sets s ON s.workout_id = w.id
+     LEFT JOIN exercises e ON e.id = s.exercise_id
      WHERE w.user_id = $1
      ORDER BY w.date DESC, s.id ASC`,
     [user.id]
   );
   res.json(result.rows);
 });
-
-// One workout with its sets nested, or null if it doesn't exist or belongs to someone else.
-// Filtering on user_id in SQL means another user's workout simply isn't found, so callers give
-// it the same 404 as a missing id and the response can't reveal that it exists.
-async function loadWorkoutDetail(id: number, userId: number): Promise<WorkoutDetail | null> {
-  const workoutResult = await pool.query<Pick<Workout, 'id' | 'date' | 'notes'>>(
-    'SELECT id, date, notes FROM workouts WHERE id = $1 AND user_id = $2',
-    [id, userId]
-  );
-  const workout = workoutResult.rows[0];
-  if (!workout) {
-    return null;
-  }
-
-  const setsResult = await pool.query<WorkoutDetailSet>(
-    `SELECT s.id, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
-     FROM sets s
-     JOIN exercises e ON e.id = s.exercise_id
-     WHERE s.workout_id = $1
-     ORDER BY s.set_number ASC`,
-    [workout.id]
-  );
-
-  // Spread copies the workout's fields into a new object, then sets is added alongside them.
-  return { ...workout, sets: setsResult.rows };
-}
 
 // ':id' is a route param: Express matches any single path segment there and puts it in
 // req.params.id. The first generic on Request types req.params. It's always a string, because

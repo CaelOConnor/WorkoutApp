@@ -467,3 +467,335 @@ describe('DELETE /workouts/:id with a valid token', () => {
     }
   );
 });
+
+// Ids every :id/:setId route must reject with 400 (see the GET /workouts/:id tests for why each).
+const INVALID_IDS = ['abc', '0', '-1', '1.5', '1e3', '99999999999', '2147483648'];
+
+// One set's stored columns, read straight from the table so tests can check whether a write
+// happened, independently of what the route returned. Omit<T, K> is Pick's opposite: every
+// field of T except K.
+async function readSet(setId: number): Promise<Omit<WorkoutSet, 'id'> | undefined> {
+  const result = await pool.query<Omit<WorkoutSet, 'id'>>(
+    'SELECT workout_id, exercise_id, set_number, reps, weight, unit FROM sets WHERE id = $1',
+    [setId]
+  );
+  return result.rows[0];
+}
+
+describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
+  let lifter: PublicUser;
+  let intruder: PublicUser;
+  let squatId: number;
+  let benchId: number;
+  let workout: Pick<Workout, 'id'>;
+  let otherWorkout: Pick<Workout, 'id'>;
+  let intruderWorkout: Pick<Workout, 'id'>;
+  let set: Pick<WorkoutSet, 'id'>;
+  // The target set's row before each test, for "changes nothing" checks.
+  let original: Omit<WorkoutSet, 'id'> | undefined;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    intruder = await createUser('intruder@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    benchId = (await createExercise('Bench')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100); the set under test is set 2.
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+    set = await addSet(workout.id, squatId, 2, 3, 120);
+    otherWorkout = await createWorkout(lifter.id, squatId, 'Another day');
+    intruderWorkout = await createWorkout(intruder.id, squatId, 'Intruder day');
+    original = await readSet(set.id);
+  });
+
+  it('updates reps and weight, returns the parent workout, and saves the change', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: 4, weight: 125.5 });
+
+    expect(res.status).toBe(200);
+    // The whole workout comes back, not just the set, so a client can redraw the screen from it.
+    const expected: WorkoutDetail = {
+      id: workout.id,
+      date: expect.any(String),
+      notes: 'Leg day',
+      sets: [
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+        { id: set.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 4, weight: '125.50', unit: 'lb' },
+      ],
+    };
+    expect(res.body).toEqual(expected);
+    expect(await readSet(set.id)).toEqual({ ...original, reps: 4, weight: '125.50' });
+  });
+
+  it('changes the exercise, and the response shows the new exercise name', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: benchId });
+
+    expect(res.status).toBe(200);
+    const body: WorkoutDetail = res.body;
+    // find() returns `WorkoutDetailSet | undefined`; toMatchObject fails on undefined, which is what we want.
+    expect(body.sets.find((s) => s.id === set.id)).toMatchObject({ exercise_id: benchId, exercise_name: 'Bench' });
+  });
+
+  it('updates set_number and unit, leaving the other columns unchanged', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ set_number: 7, unit: 'kg' });
+
+    expect(res.status).toBe(200);
+    expect(await readSet(set.id)).toEqual({ ...original, set_number: 7, unit: 'kg' });
+  });
+
+  it('returns 400 and changes nothing for an exercise_id that does not exist', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: 9999, reps: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    // reps was valid, but the UPDATE is one statement, so the FK failure stops all of it.
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  // The 404 cases below all give the same response, so a caller can't tell which rule failed,
+  // and each one leaves the set as it was.
+  it("returns 404 when another user sends the set id under their own workout's id", async () => {
+    const res = await request(app)
+      .patch(`/workouts/${intruderWorkout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(intruder.id))
+      .send({ reps: 99 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it("returns 404 when another user sends the set under its real workout's id", async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(intruder.id))
+      .send({ reps: 99 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it('returns 404 when the owner sends the set under a different one of their workouts', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${otherWorkout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: 99 });
+
+    // Owning both workouts isn't enough: the URL claims the set is in otherWorkout, and it isn't.
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it("returns 404 for a set id that doesn't exist", async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/999999`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: 99 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for workout id %s', async (id) => {
+    const res = await request(app)
+      .patch(`/workouts/${id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: 99 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for set id %s', async (id) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: 99 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each([
+    ['an empty object', {}],
+    ['an unknown field alongside a valid one', { reps: 4, rpe: 8 }],
+    // Moving a set between workouts isn't this route's job; the URL decides the workout.
+    ['workout_id', { workout_id: 2 }],
+    ['id', { id: 5 }],
+    // Every set column is NOT NULL, so null is never a valid value here.
+    ['a null reps', { reps: null }],
+    ['negative reps', { reps: -1 }],
+    ['fractional reps', { reps: 2.5 }],
+    ['reps as a string', { reps: '5' }],
+    ['negative weight', { weight: -5 }],
+    ['weight as a string', { weight: '100' }],
+    ['set_number 0', { set_number: 0 }],
+    ['exercise_id 0', { exercise_id: 0 }],
+    ['an unknown unit', { unit: 'stone' }],
+    ['a null unit', { unit: null }],
+  ])('returns 400 and changes nothing for %s', async (_label, body) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+});
+
+describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
+  let lifter: PublicUser;
+  let intruder: PublicUser;
+  let squatId: number;
+  let workout: Pick<Workout, 'id'>;
+  let otherWorkout: Pick<Workout, 'id'>;
+  let intruderWorkout: Pick<Workout, 'id'>;
+  let set: Pick<WorkoutSet, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    intruder = await createUser('intruder@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100); the set under test is set 2.
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+    set = await addSet(workout.id, squatId, 2, 3, 120);
+    otherWorkout = await createWorkout(lifter.id, squatId, 'Another day');
+    intruderWorkout = await createWorkout(intruder.id, squatId, 'Intruder day');
+  });
+
+  it('deletes only that set and returns 204 with no body', async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(204);
+    expect(res.text).toBe('');
+    // Through the API: the workout is still there, with set 1 and without set 2.
+    const after = await request(app)
+      .get(`/workouts/${workout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    const detail: WorkoutDetail = after.body;
+    expect(detail.sets.map((s) => s.set_number)).toEqual([1]);
+  });
+
+  it("keeps a workout in both GET routes after its last set is deleted", async () => {
+    // otherWorkout has only the one set createWorkout gave it.
+    const onlySet = await pool.query<Pick<WorkoutSet, 'id'>>('SELECT id FROM sets WHERE workout_id = $1', [
+      otherWorkout.id,
+    ]);
+    const onlySetId = onlySet.rows[0]?.id ?? -1;
+
+    const res = await request(app)
+      .delete(`/workouts/${otherWorkout.id}/sets/${onlySetId}`)
+      .set('Authorization', authHeader(lifter.id));
+    expect(res.status).toBe(204);
+
+    const detail = await request(app)
+      .get(`/workouts/${otherWorkout.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    expect(detail.body).toMatchObject({ id: otherWorkout.id, notes: 'Another day', sets: [] });
+
+    // GET /workouts is one row per set. A workout with no sets still gets one row, with every
+    // set column null, so the client can show it (e.g. "Another day: no sets yet").
+    const history = await request(app).get('/workouts').set('Authorization', authHeader(lifter.id));
+    const rows: WorkoutHistoryRow[] = history.body;
+    const emptyRow: WorkoutHistoryRow = {
+      id: otherWorkout.id,
+      date: expect.any(String),
+      notes: 'Another day',
+      exercise_id: null,
+      exercise_name: null,
+      set_number: null,
+      reps: null,
+      weight: null,
+      unit: null,
+    };
+    expect(rows.filter((row) => row.id === otherWorkout.id)).toEqual([emptyRow]);
+  });
+
+  it('returns 404 when the same set is deleted twice', async () => {
+    const first = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    const second = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(first.status).toBe(204);
+    expect(second.status).toBe(404);
+    expect(second.body).toEqual({ error: expect.any(String) });
+  });
+
+  it("returns 404 when another user sends the set id under their own workout's id", async () => {
+    const res = await request(app)
+      .delete(`/workouts/${intruderWorkout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(intruder.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toBeDefined();
+  });
+
+  it("returns 404 when another user sends the set under its real workout's id", async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(intruder.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toBeDefined();
+  });
+
+  it('returns 404 when the owner sends the set under a different one of their workouts', async () => {
+    const res = await request(app)
+      .delete(`/workouts/${otherWorkout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toBeDefined();
+  });
+
+  it("returns 404 for a set id that doesn't exist", async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/999999`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for workout id %s', async (id) => {
+    const res = await request(app)
+      .delete(`/workouts/${id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for set id %s', async (id) => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+});

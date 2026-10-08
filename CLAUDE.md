@@ -14,11 +14,11 @@ Workout tracker: log sets (exercise, reps, weight) and chart progress over time.
 ```
 backend/
   src/app.ts            Express app: middleware, routers, error handler (exported, no listen)
-  src/routes/           express.Router per area: auth, workouts, exercises, health
+  src/routes/           express.Router per area: auth, workouts (+ nested sets), exercises, health
   src/index.ts          Entry point: app.listen
   src/validation.ts     Runtime type guards for request bodies
   src/types/models.ts   Shared types (no server-only imports; mobile will reuse)
-  src/db/pool.ts        pg Pool;  src/db/seed.ts  seed data
+  src/db/pool.ts        pg Pool;  src/db/seed.ts  seed data;  src/db/ also has shared queries
   migrations/           SQL migrations (Up/Down); tables: users, exercises, workouts, sets
   test/                 Vitest tests
 mobile/src/app/         Expo Router screens; components/, constants/, hooks/

@@ -72,6 +72,10 @@ export interface UpdateWorkoutBody {
   notes?: string | null;
 }
 
+// PATCH /workouts/:id/sets/:setId. Partial<T> makes every field of T optional, which is exactly
+// "send only what changes". NewSetInput's unit was already optional, so nothing else differs.
+export type UpdateSetBody = Partial<NewSetInput>;
+
 export interface AuthBody {
   email: string;
   password: string;
@@ -97,12 +101,21 @@ export interface CreateWorkoutResponse {
   id: number;
 }
 
-// One row of GET /workouts: a set joined with its workout and exercise name.
-// Built from the row types above: pick some fields from each, then add exercise_name.
+// The set half of a GET /workouts row: picked from WorkoutSet, plus the exercise name.
+type HistorySetColumns = Pick<WorkoutSet, 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'> & {
+  exercise_name: string;
+};
+
+// A mapped type: same keys as T, but every value is null. `[K in keyof T]` loops over T's keys.
+type AllNull<T> = { [K in keyof T]: null };
+
+// One row of GET /workouts: a set joined with its workout and exercise name. A workout with no
+// sets still gets one row, with every set column null (from the LEFT JOIN).
+// The union says it's all or nothing: a row never has some set columns null and others filled.
+// So once a client checks `row.exercise_id !== null`, TypeScript narrows the whole row and
+// reps, weight, etc. are known to be non-null too.
 export type WorkoutHistoryRow = Pick<Workout, 'id' | 'date' | 'notes'> &
-  Pick<WorkoutSet, 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'> & {
-    exercise_name: string;
-  };
+  (HistorySetColumns | AllNull<HistorySetColumns>);
 
 // One set inside a WorkoutDetail. No workout_id: it's nested under its workout already.
 export type WorkoutDetailSet = Pick<

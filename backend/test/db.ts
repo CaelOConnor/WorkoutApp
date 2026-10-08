@@ -34,8 +34,8 @@ export async function createExercise(name: string): Promise<Pick<Exercise, 'id'>
   return exercise;
 }
 
-// Inserts a workout with one set for the given user. It needs a set because GET /workouts
-// inner-joins sets, so a workout with no sets wouldn't show up in the response at all.
+// Inserts a workout with one set for the given user, so tests have a typical workout to read,
+// edit, and delete without adding sets by hand.
 export async function createWorkout(
   userId: number,
   exerciseId: number,

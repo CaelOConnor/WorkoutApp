@@ -10,6 +10,7 @@ import type {
   CreateWorkoutBody,
   NewSetInput,
   TokenPayload,
+  UpdateSetBody,
   UpdateWorkoutBody,
   WeightUnit,
 } from './types/models';
@@ -107,6 +108,40 @@ export function isUpdateWorkoutBody(value: unknown): value is UpdateWorkoutBody 
     (value.date !== undefined || value.notes !== undefined) &&
     (value.date === undefined || isDateString(value.date)) &&
     (value.notes === undefined || value.notes === null || typeof value.notes === 'string')
+  );
+}
+
+// The columns PATCH /workouts/:id/sets/:setId may change. Exported so the route builds its SET
+// clause from the same list the guard allows.
+// `as const` keeps each entry as its literal type ('reps', not string), and `satisfies` checks
+// every entry is a real key of UpdateSetBody without widening it back to that type.
+export const UPDATE_SET_KEYS = [
+  'exercise_id',
+  'set_number',
+  'reps',
+  'weight',
+  'unit',
+] as const satisfies readonly (keyof UpdateSetBody)[];
+
+// unknown -> UpdateSetBody
+// Same rules as isUpdateWorkoutBody: no unknown keys (so workout_id or id can't look editable),
+// at least one field, and each field that's present must be valid. Every set column is NOT NULL,
+// so null fails each check below rather than having a case of its own.
+export function isUpdateSetBody(value: unknown): value is UpdateSetBody {
+  if (!isRecord(value)) {
+    return false;
+  }
+  // A readonly tuple of literals is assignable to readonly string[], so this widens it without a
+  // cast. includes() on the literal tuple itself wouldn't accept an arbitrary string key.
+  const allowedKeys: readonly string[] = UPDATE_SET_KEYS;
+  return (
+    Object.keys(value).every((key) => allowedKeys.includes(key)) &&
+    UPDATE_SET_KEYS.some((key) => value[key] !== undefined) &&
+    (value.exercise_id === undefined || isPositiveInteger(value.exercise_id)) &&
+    (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
+    (value.reps === undefined || isNonNegativeInteger(value.reps)) &&
+    (value.weight === undefined || isNonNegativeNumber(value.weight)) &&
+    (value.unit === undefined || isWeightUnit(value.unit))
   );
 }
 
