@@ -37,6 +37,11 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [ ] Save a reusable workout (e.g. "leg day") as a list of exercises.
 - [ ] Start a new workout from a template so only the numbers need filling in.
 
+## Known issues
+- **Intermittent Vitest worker crash on Windows.** About 7% of `npm test` runs (6 of 90 measured, 2026-10-08) end with `Worker exited unexpectedly with exit code 3221226505` (`0xC0000409`, a native fast-fail), always while running `test/workouts.test.ts`. The rest of the suite passes; rerunning gets a clean run. Seen on the untouched tree too, so it isn't caused by a specific change. Node 24.15, Vitest 5.0.3, `pool: 'forks'` (default).
+  - Ruled out: `pool: 'threads'` (same rate, ~4 in 60, and worse: the whole Vitest process dies with no summary, so failures are silent); swapping `bcrypt` for `bcryptjs` (crashed 2 of the first 7 runs with no native bcrypt loaded).
+  - Not yet tried: `isolate: false`, `pg` native bindings (not used, but worth confirming), a different Node 24 patch or Node 22, splitting `workouts.test.ts` (largest file) to see if size or run time matters.
+
 ## Later
 - Other activity types: climbing, running, swimming.
 - Offline logging with SQLite on the device, plus sync to the server.

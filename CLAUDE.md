@@ -33,6 +33,7 @@ docs/ROADMAP.md         Known next tasks
 - `npm run seed`: seed a test user and exercises (safe to rerun)
 - `npm run migrate:create -- <name>` / `migrate:up` / `migrate:down`: new SQL migration / apply pending / roll back the last one (uses `DATABASE_URL` from `.env`)
 - Root: `docker compose up -d postgres` (DB only) or `docker compose up --build` (backend runs migrations on start). Tests rebuild the test DB from migrations.
+- Tests use the separate `postgres-test` container on port 5433 (database `workoutapp_test`), not the dev DB on 5432: `docker compose up -d postgres-test` before `npm test`.
 - mobile/: `npm start` (Expo), `npm run lint`
 
 ## Working rules
