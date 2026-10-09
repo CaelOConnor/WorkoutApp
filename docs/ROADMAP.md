@@ -19,7 +19,7 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [x] `GET /workouts` returns `WorkoutDetail[]` (same shape as `GET /workouts/:id`), newest date first, then id. Two queries in total (workouts, then all their sets via `workout_id = ANY($1)`), not one per workout. Replaced the flat one-row-per-set `WorkoutHistoryRow`.
 - [ ] Paginate `GET /workouts`: it returns every workout the user has ever logged. Keyset (cursor) pagination on `(date, id)` fits the existing order, e.g. `?before_date=&before_id=&limit=`, and stays correct when workouts are added between pages (unlike `OFFSET`). Do it alongside the history-by-week screen, which may want a date range (`?from=&to=`) instead.
 - [ ] No route adds a set to an existing workout (`POST /workouts/:id/sets`), so an emptied workout can't be refilled yet.
-- [ ] Weight ≥ 10000 is a 500 (Postgres `NUMERIC(6,2)` overflow) on `POST /workouts` and `PATCH .../sets/:setId`. Add an upper bound to the guards.
+- [x] Set values the columns can't store are a 400, not a 500 or a silent round: weight must fit `NUMERIC(6,2)` (≤ 9999.99, at most 2 decimals), and `reps`, `set_number`, `exercise_id` must fit `INTEGER` (≤ 2147483647). Applies to `POST /workouts` and `PATCH .../sets/:setId`.
 - [ ] `set_number` is client-supplied with no uniqueness or contiguity; deleting a set leaves gaps (1, 3) and duplicates are possible. Decide when adding/reordering sets in the app.
 - [ ] Signup: no email format or minimum password length check.
 - [x] Split routes out of `app.ts` into `express.Router` files in `src/routes/` (auth, workouts, exercises, health). `requireAuth` runs on the whole workouts router.

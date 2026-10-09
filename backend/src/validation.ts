@@ -27,18 +27,41 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+// Largest value a Postgres INTEGER (and so a SERIAL id) can hold.
+const MAX_PG_INTEGER = 2_147_483_647;
+
 // unknown -> number. `typeof` narrows to number first, so `value > 0` type-checks.
+// Every integer we accept ends up in an INTEGER column, so anything larger would make Postgres
+// throw an out-of-range error (a 500) instead of us returning a 400.
 function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_PG_INTEGER;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_PG_INTEGER;
 }
 
+// sets.weight is NUMERIC(6,2): at most 6 digits, 2 of them after the point.
+const MAX_WEIGHT = 9999.99;
+
+// Digits, then optionally a point and one or two more. No sign, exponent or third decimal.
+const WEIGHT_PATTERN = /^\d+(\.\d{1,2})?$/;
+
+// unknown -> number that sets.weight stores exactly.
+// Too large overflows the column (a 500). Too many decimals is worse: Postgres silently rounds
+// (100.125 is stored as 100.13), so the client would get back a weight it never sent.
+// String(value) is the text pg sends to Postgres, so checking it checks exactly what gets stored.
+// It's also the shortest text that reads back as the same number, so 100.12 is "100.12" even
+// though the float isn't exactly 100.12; arithmetic like value * 100 would expose that error.
 // Number.isFinite rules out NaN and Infinity, which are still typeof 'number'.
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+function isSetWeight(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MAX_WEIGHT &&
+    WEIGHT_PATTERN.test(String(value))
+  );
 }
 
 // unknown -> 'lb' | 'kg'. Comparing against each literal narrows to that literal.
@@ -76,7 +99,7 @@ export function isNewSetInput(value: unknown): value is NewSetInput {
     isPositiveInteger(value.exercise_id) &&
     isPositiveInteger(value.set_number) &&
     isNonNegativeInteger(value.reps) &&
-    isNonNegativeNumber(value.weight) &&
+    isSetWeight(value.weight) &&
     (value.unit === undefined || isWeightUnit(value.unit))
   );
 }
@@ -140,7 +163,7 @@ export function isUpdateSetBody(value: unknown): value is UpdateSetBody {
     (value.exercise_id === undefined || isPositiveInteger(value.exercise_id)) &&
     (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
     (value.reps === undefined || isNonNegativeInteger(value.reps)) &&
-    (value.weight === undefined || isNonNegativeNumber(value.weight)) &&
+    (value.weight === undefined || isSetWeight(value.weight)) &&
     (value.unit === undefined || isWeightUnit(value.unit))
   );
 }
@@ -149,9 +172,6 @@ export function isUpdateSetBody(value: unknown): value is UpdateSetBody {
 export function isAuthBody(value: unknown): value is AuthBody {
   return isRecord(value) && isNonEmptyString(value.email) && isNonEmptyString(value.password);
 }
-
-// Largest value a Postgres INTEGER (and so a SERIAL id) can hold.
-const MAX_PG_INTEGER = 2_147_483_647;
 
 // string -> number | null, for ids in URL params like /workouts/:id.
 // Route params are always strings, so this converts as well as checks. That's why it returns

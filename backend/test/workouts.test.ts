@@ -38,6 +38,32 @@ const INVALID_DATES = [
 // 2000 is divisible by 400, so it's a leap year despite being a century.
 const VALID_LEAP_DAYS = ['2024-02-29', '2000-02-29'];
 
+// sets.weight is NUMERIC(6,2): 6 digits in total, 2 after the point, so the largest is 9999.99.
+// Each of these either overflows the column (a 500) or would be silently rounded to 2 places.
+const INVALID_WEIGHTS = [
+  10000, // one cent past the max
+  9999.999, // rounds up to 10000.00, which then overflows
+  100.125, // Postgres would quietly store 100.13
+  0.001, // would be stored as 0.00
+];
+
+// The other side of each boundary, with what Postgres should store for it.
+const VALID_WEIGHTS: [weight: number, stored: string][] = [
+  [9999.99, '9999.99'],
+  [100.12, '100.12'],
+  [0.01, '0.01'],
+];
+
+// Largest value a Postgres INTEGER holds; reps, set_number and exercise_id are all INTEGER.
+const MAX_PG_INTEGER = 2_147_483_647;
+
+// Integer set fields one past that limit. Postgres rejects them with an out-of-range error (a 500).
+const OVERSIZED_INTEGER_FIELDS = [
+  ['reps', { reps: MAX_PG_INTEGER + 1 }],
+  ['set_number', { set_number: MAX_PG_INTEGER + 1 }],
+  ['exercise_id', { exercise_id: MAX_PG_INTEGER + 1 }],
+] as const;
+
 describe('POST /workouts with a valid token', () => {
   // `let` with a type annotation: assigned in beforeEach, read in the tests.
   let lifter: PublicUser;
@@ -110,6 +136,53 @@ describe('POST /workouts with a valid token', () => {
     // date::text lets Postgres format the DATE, avoiding JS time-zone conversion.
     const saved = await pool.query<{ date: string }>('SELECT date::text AS date FROM workouts');
     expect(saved.rows).toEqual([{ date }]);
+  });
+
+  it.each(INVALID_WEIGHTS)('returns 400 and saves nothing for weight %s', async (weight) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const workouts = await pool.query('SELECT id FROM workouts');
+    expect(workouts.rows).toEqual([]);
+  });
+
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight }] });
+
+    expect(res.status).toBe(201);
+    const saved = await pool.query<Pick<WorkoutSet, 'weight'>>('SELECT weight FROM sets');
+    expect(saved.rows).toEqual([{ weight: stored }]);
+  });
+
+  it.each(OVERSIZED_INTEGER_FIELDS)('returns 400 and saves nothing for %s past the INTEGER max', async (_label, field) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      // Spread order matters: the oversized field comes last, so it overrides the valid one.
+      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 100, ...field }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    const workouts = await pool.query('SELECT id FROM workouts');
+    expect(workouts.rows).toEqual([]);
+  });
+
+  it('saves the largest INTEGER as reps and set_number', async () => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: exerciseId, set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER, weight: 100 }] });
+
+    expect(res.status).toBe(201);
+    const saved = await pool.query<Pick<WorkoutSet, 'reps' | 'set_number'>>('SELECT reps, set_number FROM sets');
+    expect(saved.rows).toEqual([{ reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER }]);
   });
 });
 
@@ -742,6 +815,48 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
     expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it.each(INVALID_WEIGHTS)('returns 400 and changes nothing for weight %s', async (weight) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ weight });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ weight });
+
+    expect(res.status).toBe(200);
+    expect(await readSet(set.id)).toEqual({ ...original, weight: stored });
+  });
+
+  it.each(OVERSIZED_INTEGER_FIELDS)('returns 400 and changes nothing for %s past the INTEGER max', async (_label, body) => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it('saves the largest INTEGER as reps and set_number', async () => {
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER });
+
+    expect(res.status).toBe(200);
+    expect(await readSet(set.id)).toEqual({ ...original, reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER });
   });
 });
 
