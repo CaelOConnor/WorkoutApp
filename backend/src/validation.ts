@@ -6,6 +6,7 @@
 // narrows the argument from `unknown` to `X` in the calling code.
 
 import type {
+  AddSetBody,
   AuthBody,
   CreateWorkoutBody,
   NewSetInput,
@@ -164,6 +165,25 @@ export function isUpdateSetBody(value: unknown): value is UpdateSetBody {
     (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
     (value.reps === undefined || isNonNegativeInteger(value.reps)) &&
     (value.weight === undefined || isSetWeight(value.weight)) &&
+    (value.unit === undefined || isWeightUnit(value.unit))
+  );
+}
+
+// unknown -> AddSetBody
+// The same fields as a set in POST /workouts, with set_number optional. Unknown keys are rejected,
+// as in the PATCH guards, so a workout_id in the body can't look like it chooses the workout.
+// The allowed keys are exactly the set columns PATCH may change, so that list is reused.
+export function isAddSetBody(value: unknown): value is AddSetBody {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const allowedKeys: readonly string[] = UPDATE_SET_KEYS;
+  return (
+    Object.keys(value).every((key) => allowedKeys.includes(key)) &&
+    isPositiveInteger(value.exercise_id) &&
+    (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
+    isNonNegativeInteger(value.reps) &&
+    isSetWeight(value.weight) &&
     (value.unit === undefined || isWeightUnit(value.unit))
   );
 }

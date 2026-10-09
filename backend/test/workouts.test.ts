@@ -992,3 +992,225 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
     expect(res.body).toEqual({ error: expect.any(String) });
   });
 });
+
+// A workout's set ids straight from the table, for "saves nothing" checks.
+async function setIdsOf(workoutId: number): Promise<number[]> {
+  const result = await pool.query<Pick<WorkoutSet, 'id'>>('SELECT id FROM sets WHERE workout_id = $1 ORDER BY id', [
+    workoutId,
+  ]);
+  return result.rows.map((row) => row.id);
+}
+
+describe('POST /workouts/:id/sets with a valid token', () => {
+  let lifter: PublicUser;
+  let intruder: PublicUser;
+  let squatId: number;
+  let benchId: number;
+  let workout: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    intruder = await createUser('intruder@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    benchId = (await createExercise('Bench')).id;
+    // createWorkout adds set 1 (Squat, 5 reps, 100).
+    workout = await createWorkout(lifter.id, squatId, 'Leg day');
+  });
+
+  it('adds a set with the given set_number and returns 201 with the whole workout', async () => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: benchId, set_number: 5, reps: 8, weight: 60.5, unit: 'kg' });
+
+    expect(res.status).toBe(201);
+    const expected: WorkoutDetail = {
+      id: workout.id,
+      date: expect.any(String),
+      notes: 'Leg day',
+      sets: [
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+        { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 5, reps: 8, weight: '60.50', unit: 'kg' },
+      ],
+    };
+    expect(res.body).toEqual(expected);
+    // The response is read back from the table, but count the rows too, so a route that
+    // inserted twice would fail.
+    expect(await setIdsOf(workout.id)).toHaveLength(2);
+  });
+
+  it('assigns the highest set_number + 1 when set_number is missing, past any gap', async () => {
+    // Sets 1 and 3, as if set 2 had been deleted. Counting sets would give 3, a duplicate.
+    await addSet(workout.id, squatId, 3, 3, 120);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 2, weight: 130 });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets.map((s) => s.set_number)).toEqual([1, 3, 4]);
+    // unit was missing too, so it gets the column's default.
+    expect(body.sets[2]).toMatchObject({ exercise_id: squatId, set_number: 4, reps: 2, weight: '130.00', unit: 'lb' });
+  });
+
+  it("only counts this workout's sets when assigning set_number", async () => {
+    // A higher set_number in another of the user's workouts must not leak into this one.
+    const other = await createWorkout(lifter.id, squatId, 'Another day');
+    await addSet(other.id, squatId, 9, 5, 100);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets.map((s) => s.set_number)).toEqual([1, 2]);
+  });
+
+  it('adds set 1 to a workout whose sets were all deleted', async () => {
+    const [onlySetId] = await setIdsOf(workout.id);
+    const deleted = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${onlySetId ?? -1}`)
+      .set('Authorization', authHeader(lifter.id));
+    expect(deleted.status).toBe(204);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: benchId, reps: 10, weight: 40 });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets).toEqual([
+      { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 10, weight: '40.00', unit: 'lb' },
+    ]);
+  });
+
+  it('returns 409 and saves nothing when the next set_number would pass the INTEGER max', async () => {
+    // Reachable through the API: PATCH a set's set_number to the max, then add one without a number.
+    await addSet(workout.id, squatId, MAX_PG_INTEGER, 5, 100);
+    const before = await setIdsOf(workout.id);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    // 409 Conflict, not 400: the body is fine; the workout's current state is what blocks it.
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await setIdsOf(workout.id)).toEqual(before);
+  });
+
+  it('returns 400 and saves nothing for an exercise_id that does not exist', async () => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: 9999, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await setIdsOf(workout.id)).toHaveLength(1);
+  });
+
+  // The 404s below give the same response, so a caller can't tell whether the workout exists.
+  it("returns 404 and saves nothing for another user's workout", async () => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(intruder.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await setIdsOf(workout.id)).toHaveLength(1);
+  });
+
+  it("returns 404, not 400, for another user's workout even with an unknown exercise_id", async () => {
+    // A 400 here would mean the route got as far as trying the insert, i.e. the workout exists.
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(intruder.id))
+      .send({ exercise_id: 9999, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it("returns 404 for a workout id that doesn't exist", async () => {
+    const res = await request(app)
+      .post('/workouts/999999/sets')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for workout id %s', async (id) => {
+    const res = await request(app)
+      .post(`/workouts/${id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  // exercise_id 1 is Squat (resetDb restarts ids), so only the named problem makes each body invalid.
+  // The row type is spelled out because the rows come from different places (literals and the
+  // spread .map() results), and TypeScript would otherwise infer a loose array instead of pairs.
+  type BodyCase = [label: string, body: Record<string, unknown>];
+  const invalidBodies: BodyCase[] = [
+    ['an empty object', {}],
+    ['a missing exercise_id', { reps: 5, weight: 100 }],
+    ['missing reps', { exercise_id: 1, weight: 100 }],
+    ['a missing weight', { exercise_id: 1, reps: 5 }],
+    // Optional means missing or valid; null is neither.
+    ['a null set_number', { exercise_id: 1, reps: 5, weight: 100, set_number: null }],
+    ['set_number 0', { exercise_id: 1, reps: 5, weight: 100, set_number: 0 }],
+    ['an unknown unit', { exercise_id: 1, reps: 5, weight: 100, unit: 'stone' }],
+    // Unknown keys are rejected, as in the PATCH routes: the URL decides the workout.
+    ['workout_id', { exercise_id: 1, reps: 5, weight: 100, workout_id: 2 }],
+    ['an unknown field', { exercise_id: 1, reps: 5, weight: 100, rpe: 8 }],
+    ...INVALID_WEIGHTS.map((weight): BodyCase => [`weight ${weight}`, { exercise_id: 1, reps: 5, weight }]),
+    ...OVERSIZED_INTEGER_FIELDS.map(
+      ([label, field]): BodyCase => [`${label} past the INTEGER max`, { exercise_id: 1, reps: 5, weight: 100, ...field }]
+    ),
+  ];
+  it.each(invalidBodies)('returns 400 and saves nothing for %s', async (_label, body) => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(await setIdsOf(workout.id)).toHaveLength(1);
+  });
+
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets[1]?.weight).toBe(stored);
+  });
+
+  it('accepts the largest INTEGER as an explicit set_number and reps', async () => {
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER, weight: 100 });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets[1]).toMatchObject({ set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER });
+  });
+});

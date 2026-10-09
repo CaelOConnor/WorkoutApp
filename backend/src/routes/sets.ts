@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import pool from '../db/pool';
-import { isUnknownExerciseError } from '../db/errors';
+import { isOutOfRangeError, isUnknownExerciseError } from '../db/errors';
 import { loadWorkoutDetail } from '../db/workoutDetail';
 import { getAuthUser } from '../middleware/auth';
-import { isUpdateSetBody, parseId, UPDATE_SET_KEYS } from '../validation';
+import { isAddSetBody, isUpdateSetBody, parseId, UPDATE_SET_KEYS } from '../validation';
 import type { ErrorResponse, WorkoutDetail } from '../types/models';
 
 // Mounted by workoutsRouter at '/:id/sets', so '/:setId' here is /workouts/:id/sets/:setId.
@@ -14,6 +14,64 @@ import type { ErrorResponse, WorkoutDetail } from '../types/models';
 const setsRouter = Router({ mergeParams: true });
 
 type SetParams = { id: string; setId: string };
+
+// '/' here is /workouts/:id/sets. Only the parent's :id is in the path, hence { id: string }.
+setsRouter.post(
+  '/',
+  async (
+    req: Request<{ id: string }, WorkoutDetail | ErrorResponse, unknown>,
+    res: Response<WorkoutDetail | ErrorResponse>
+  ) => {
+    const workoutId = parseId(req.params.id);
+    if (workoutId === null) {
+      return res.status(400).json({ error: 'Invalid workout id' });
+    }
+    if (!isAddSetBody(req.body)) {
+      return res.status(400).json({ error: 'Invalid set body' });
+    }
+    const { exercise_id, set_number, reps, weight, unit } = req.body;
+    const user = getAuthUser(req);
+
+    try {
+      // INSERT ... SELECT inserts one row per row the SELECT finds. The SELECT finds the workout
+      // only if it's this id and this user's, so a missing or someone else's workout inserts
+      // nothing (rowCount 0, a 404), and the exercise FK is never checked for it, so an intruder
+      // can't get a 400 that would reveal the workout exists.
+      // set_number: the one sent, else this workout's highest + 1, else 1 (MAX of no rows is
+      // NULL, and NULL + 1 is NULL, so COALESCE falls through to 1 for an empty workout).
+      // ::int tells Postgres what type $2 is, since it could be NULL.
+      // Not safe against two adds at once: both can read the same MAX (see ROADMAP.md).
+      const insertResult = await pool.query(
+        `INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit)
+         SELECT w.id, $1, COALESCE($2::int, (SELECT MAX(s.set_number) + 1 FROM sets s WHERE s.workout_id = w.id), 1), $3, $4, $5
+         FROM workouts w
+         WHERE w.id = $6 AND w.user_id = $7`,
+        // `?? null`: pg sends JS null as SQL NULL; undefined isn't a value it accepts.
+        [exercise_id, set_number ?? null, reps, weight, unit ?? 'lb', workoutId, user.id]
+      );
+      if (insertResult.rowCount === 0) {
+        return res.status(404).json({ error: 'Workout not found' });
+      }
+    } catch (err: unknown) {
+      if (isUnknownExerciseError(err)) {
+        return res.status(400).json({ error: 'Unknown exercise_id' });
+      }
+      // The body was range-checked, so only MAX + 1 can overflow: the workout's highest
+      // set_number is already the INTEGER max. A conflict with the workout's state, not a bad body.
+      if (isOutOfRangeError(err)) {
+        return res.status(409).json({ error: 'No set_number left after the highest one in this workout' });
+      }
+      throw err;
+    }
+
+    const workout = await loadWorkoutDetail(workoutId, user.id);
+    if (!workout) {
+      // Only possible if the workout was deleted between the two queries.
+      return res.status(404).json({ error: 'Workout not found' });
+    }
+    return res.status(201).json(workout);
+  }
+);
 
 setsRouter.patch(
   '/:setId',

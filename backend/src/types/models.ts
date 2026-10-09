@@ -72,6 +72,10 @@ export interface UpdateWorkoutBody {
   notes?: string | null;
 }
 
+// POST /workouts/:id/sets. Omit drops set_number from NewSetInput, then it's added back as
+// optional: when it's missing, the server uses the workout's highest set_number + 1.
+export type AddSetBody = Omit<NewSetInput, 'set_number'> & { set_number?: number };
+
 // PATCH /workouts/:id/sets/:setId. Partial<T> makes every field of T optional, which is exactly
 // "send only what changes". NewSetInput's unit was already optional, so nothing else differs.
 export type UpdateSetBody = Partial<NewSetInput>;

@@ -11,3 +11,9 @@ export function isUnknownExerciseError(err: unknown): boolean {
     err.constraint === 'sets_exercise_id_fkey'
   );
 }
+
+// True when a value was too big for its column. 22003 = numeric_value_out_of_range. Request
+// values are range-checked before any query, so this only comes from a value computed in SQL.
+export function isOutOfRangeError(err: unknown): boolean {
+  return err instanceof DatabaseError && err.code === '22003';
+}
