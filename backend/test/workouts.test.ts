@@ -7,7 +7,6 @@ import type {
   PublicUser,
   Workout,
   WorkoutDetail,
-  WorkoutHistoryRow,
   WorkoutSet,
 } from '../src/types/models';
 
@@ -114,30 +113,118 @@ describe('POST /workouts with a valid token', () => {
   });
 });
 
+// Sets a workout's date directly, so ordering tests control it instead of getting today's default.
+async function setWorkoutDate(workoutId: number, date: string): Promise<void> {
+  await pool.query('UPDATE workouts SET date = $1 WHERE id = $2', [date, workoutId]);
+}
+
 describe('GET /workouts with a valid token', () => {
   let userA: PublicUser;
   let userB: PublicUser;
+  let benchId: number;
+  let squatId: number;
   let workoutA: Pick<Workout, 'id'>;
 
   beforeEach(async () => {
     await resetDb();
     userA = await createUser('a@example.com', 'password');
     userB = await createUser('b@example.com', 'password');
-    const exerciseId = (await createExercise('Bench')).id;
-    workoutA = await createWorkout(userA.id, exerciseId, "A's workout");
-    await createWorkout(userB.id, exerciseId, "B's workout");
+    benchId = (await createExercise('Bench')).id;
+    squatId = (await createExercise('Squat')).id;
+    // createWorkout adds set 1 (5 reps, 100) of the given exercise.
+    workoutA = await createWorkout(userA.id, benchId, "A's workout");
+    await createWorkout(userB.id, benchId, "B's workout");
   });
 
-  it("returns only the token user's workouts", async () => {
+  it("returns only the token user's workouts, in the same shape as GET /workouts/:id", async () => {
     const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
 
     expect(res.status).toBe(200);
-    // supertest's res.body is `any`; annotating it as WorkoutHistoryRow[] lets the
-    // callback below be type-checked instead of silently accepting anything.
-    const rows: WorkoutHistoryRow[] = res.body;
-    expect(rows.map((row) => ({ id: row.id, notes: row.notes }))).toEqual([
-      { id: workoutA.id, notes: "A's workout" },
+    // Annotating with the type makes a typo or a missing key in `expected` a compile error.
+    const expected: WorkoutDetail[] = [
+      {
+        id: workoutA.id,
+        date: expect.any(String),
+        notes: "A's workout",
+        sets: [
+          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+        ],
+      },
+    ];
+    expect(res.body).toEqual(expected);
+  });
+
+  it('nests each workout\'s own sets under it, ordered by set_number', async () => {
+    const workoutA2 = await createWorkout(userA.id, squatId, 'Leg day');
+    await setWorkoutDate(workoutA.id, '2026-09-02');
+    await setWorkoutDate(workoutA2.id, '2026-09-01');
+    // Inserted out of order and interleaved across the two workouts, so grouping or ordering
+    // by insertion (set id) would put sets in the wrong place.
+    const a3 = await addSet(workoutA.id, benchId, 3, 6, 80);
+    const b2 = await addSet(workoutA2.id, squatId, 2, 3, 140);
+    const a2 = await addSet(workoutA.id, squatId, 2, 8, 60);
+
+    const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
+
+    expect(res.status).toBe(200);
+    const expected: WorkoutDetail[] = [
+      {
+        id: workoutA.id,
+        date: expect.any(String),
+        notes: "A's workout",
+        sets: [
+          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+          { id: a2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 8, weight: '60.00', unit: 'lb' },
+          { id: a3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 6, weight: '80.00', unit: 'lb' },
+        ],
+      },
+      {
+        id: workoutA2.id,
+        date: expect.any(String),
+        notes: 'Leg day',
+        sets: [
+          { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+          { id: b2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: '140.00', unit: 'lb' },
+        ],
+      },
+    ];
+    expect(res.body).toEqual(expected);
+  });
+
+  it('orders workouts newest date first, then by id descending within a date', async () => {
+    // The highest id gets the oldest date, so ordering by id alone fails, and the two on the
+    // same date catch a missing (or ascending) id tiebreaker.
+    const sameDayLater = await createWorkout(userA.id, benchId, 'same day, later id');
+    const oldest = await createWorkout(userA.id, benchId, 'oldest');
+    await setWorkoutDate(workoutA.id, '2026-09-03');
+    await setWorkoutDate(sameDayLater.id, '2026-09-03');
+    await setWorkoutDate(oldest.id, '2026-09-01');
+
+    const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
+
+    expect(res.status).toBe(200);
+    const workouts: WorkoutDetail[] = res.body;
+    expect(workouts.map((w) => w.id)).toEqual([sameDayLater.id, workoutA.id, oldest.id]);
+  });
+
+  it('returns a workout with no sets once, with sets: []', async () => {
+    // Inserted directly: createWorkout always adds a set.
+    const emptyResult = await pool.query<Pick<Workout, 'id'>>(
+      "INSERT INTO workouts (user_id, date, notes) VALUES ($1, '2026-09-05', 'Rest day') RETURNING id",
+      [userA.id]
+    );
+    const emptyId = emptyResult.rows[0]?.id ?? -1;
+    await setWorkoutDate(workoutA.id, '2026-09-01');
+
+    const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
+
+    expect(res.status).toBe(200);
+    const workouts: WorkoutDetail[] = res.body;
+    // filter, not find: a duplicate entry for the empty workout should fail the test too.
+    expect(workouts.filter((w) => w.id === emptyId)).toEqual([
+      { id: emptyId, date: expect.any(String), notes: 'Rest day', sets: [] },
     ]);
+    expect(workouts).toHaveLength(2);
   });
 });
 
@@ -711,22 +798,13 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
     expect(detail.body).toMatchObject({ id: otherWorkout.id, notes: 'Another day', sets: [] });
 
-    // GET /workouts is one row per set. A workout with no sets still gets one row, with every
-    // set column null, so the client can show it (e.g. "Another day: no sets yet").
+    // The list still includes the emptied workout, with sets: [], so the client can show it
+    // (e.g. "Another day: no sets yet").
     const history = await request(app).get('/workouts').set('Authorization', authHeader(lifter.id));
-    const rows: WorkoutHistoryRow[] = history.body;
-    const emptyRow: WorkoutHistoryRow = {
-      id: otherWorkout.id,
-      date: expect.any(String),
-      notes: 'Another day',
-      exercise_id: null,
-      exercise_name: null,
-      set_number: null,
-      reps: null,
-      weight: null,
-      unit: null,
-    };
-    expect(rows.filter((row) => row.id === otherWorkout.id)).toEqual([emptyRow]);
+    const workouts: WorkoutDetail[] = history.body;
+    expect(workouts.filter((w) => w.id === otherWorkout.id)).toEqual([
+      { id: otherWorkout.id, date: expect.any(String), notes: 'Another day', sets: [] },
+    ]);
   });
 
   it('returns 404 when the same set is deleted twice', async () => {

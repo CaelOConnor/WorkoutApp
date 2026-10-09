@@ -101,22 +101,6 @@ export interface CreateWorkoutResponse {
   id: number;
 }
 
-// The set half of a GET /workouts row: picked from WorkoutSet, plus the exercise name.
-type HistorySetColumns = Pick<WorkoutSet, 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'> & {
-  exercise_name: string;
-};
-
-// A mapped type: same keys as T, but every value is null. `[K in keyof T]` loops over T's keys.
-type AllNull<T> = { [K in keyof T]: null };
-
-// One row of GET /workouts: a set joined with its workout and exercise name. A workout with no
-// sets still gets one row, with every set column null (from the LEFT JOIN).
-// The union says it's all or nothing: a row never has some set columns null and others filled.
-// So once a client checks `row.exercise_id !== null`, TypeScript narrows the whole row and
-// reps, weight, etc. are known to be non-null too.
-export type WorkoutHistoryRow = Pick<Workout, 'id' | 'date' | 'notes'> &
-  (HistorySetColumns | AllNull<HistorySetColumns>);
-
 // One set inside a WorkoutDetail. No workout_id: it's nested under its workout already.
 export type WorkoutDetailSet = Pick<
   WorkoutSet,
@@ -125,7 +109,8 @@ export type WorkoutDetailSet = Pick<
   exercise_name: string;
 };
 
-// GET /workouts/:id: one workout with its sets nested, ordered by set_number.
+// One workout with its sets nested, ordered by set_number. GET /workouts/:id returns one;
+// GET /workouts returns an array of them (sets: [] for a workout with no sets).
 // No user_id: the caller can only ever see their own workouts, so it would add nothing.
 export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {
   sets: WorkoutDetailSet[];

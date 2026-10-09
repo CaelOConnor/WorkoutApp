@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../db/pool';
 import { isUnknownExerciseError } from '../db/errors';
-import { loadWorkoutDetail } from '../db/workoutDetail';
+import { listWorkoutDetails, loadWorkoutDetail } from '../db/workoutDetail';
 import { getAuthUser, requireAuth } from '../middleware/auth';
 import { isCreateWorkoutBody, isUpdateWorkoutBody, parseId } from '../validation';
 import type {
@@ -10,7 +10,6 @@ import type {
   ErrorResponse,
   Workout,
   WorkoutDetail,
-  WorkoutHistoryRow,
 } from '../types/models';
 import type { NoParams } from './types';
 import setsRouter from './sets';
@@ -90,22 +89,10 @@ workoutsRouter.post(
   }
 );
 
-workoutsRouter.get('/', async (req: Request, res: Response<WorkoutHistoryRow[]>) => {
+// Each workout appears once with its sets nested, the same shape as GET /workouts/:id.
+workoutsRouter.get('/', async (req: Request, res: Response<WorkoutDetail[]>) => {
   const user = getAuthUser(req);
-  // $1 is a placeholder: pg sends user.id separately from the SQL text, so it can't inject SQL.
-  // LEFT JOIN keeps a workout with no sets: it comes back as one row with every set column null.
-  // Both joins must be LEFT: an inner join to exercises would compare e.id to that null
-  // exercise_id, match nothing, and drop the row again.
-  const result = await pool.query<WorkoutHistoryRow>(
-    `SELECT w.id, w.date, w.notes, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
-     FROM workouts w
-     LEFT JOIN sets s ON s.workout_id = w.id
-     LEFT JOIN exercises e ON e.id = s.exercise_id
-     WHERE w.user_id = $1
-     ORDER BY w.date DESC, s.id ASC`,
-    [user.id]
-  );
-  res.json(result.rows);
+  res.json(await listWorkoutDetails(user.id));
 });
 
 // ':id' is a route param: Express matches any single path segment there and puts it in

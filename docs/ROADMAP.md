@@ -15,7 +15,9 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 
 ## Phase 2: Edit and delete API (TDD)
 - [x] Get one workout, edit a workout, delete a workout, edit or delete a single set (`PATCH`/`DELETE /workouts/:id/sets/:setId`, nested router in `src/routes/sets.ts`).
-- [x] Empty workouts are allowed: `GET /workouts` now `LEFT JOIN`s, so a workout with no sets is one row with every set column `null`; `GET /workouts/:id` gives `sets: []`.
+- [x] Empty workouts are allowed: both `GET /workouts` and `GET /workouts/:id` give `sets: []`.
+- [x] `GET /workouts` returns `WorkoutDetail[]` (same shape as `GET /workouts/:id`), newest date first, then id. Two queries in total (workouts, then all their sets via `workout_id = ANY($1)`), not one per workout. Replaced the flat one-row-per-set `WorkoutHistoryRow`.
+- [ ] Paginate `GET /workouts`: it returns every workout the user has ever logged. Keyset (cursor) pagination on `(date, id)` fits the existing order, e.g. `?before_date=&before_id=&limit=`, and stays correct when workouts are added between pages (unlike `OFFSET`). Do it alongside the history-by-week screen, which may want a date range (`?from=&to=`) instead.
 - [ ] No route adds a set to an existing workout (`POST /workouts/:id/sets`), so an emptied workout can't be refilled yet.
 - [ ] Weight ≥ 10000 is a 500 (Postgres `NUMERIC(6,2)` overflow) on `POST /workouts` and `PATCH .../sets/:setId`. Add an upper bound to the guards.
 - [ ] `set_number` is client-supplied with no uniqueness or contiguity; deleting a set leaves gaps (1, 3) and duplicates are possible. Decide when adding/reordering sets in the app.
