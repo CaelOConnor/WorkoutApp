@@ -34,6 +34,11 @@ const INVALID_DATES = [
   ' 2026-10-07', // leading space
 ];
 
+// Every workout `date` in a response is a plain calendar day, 'YYYY-MM-DD', never a timestamp
+// like '2026-09-05T04:00:00.000Z' (whose day depends on the server's time zone). Used where the
+// test doesn't control the date (the column default, today); tests that set a date expect it exactly.
+const DATE_ONLY = expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/);
+
 // Real leap days, so a check that's too strict (e.g. rejecting every Feb 29) fails.
 // 2000 is divisible by 400, so it's a leap year despite being a century.
 const VALID_LEAP_DAYS = ['2024-02-29', '2000-02-29'];
@@ -217,7 +222,7 @@ describe('GET /workouts with a valid token', () => {
     const expected: WorkoutDetail[] = [
       {
         id: workoutA.id,
-        date: expect.any(String),
+        date: DATE_ONLY,
         notes: "A's workout",
         sets: [
           { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
@@ -243,7 +248,7 @@ describe('GET /workouts with a valid token', () => {
     const expected: WorkoutDetail[] = [
       {
         id: workoutA.id,
-        date: expect.any(String),
+        date: '2026-09-02',
         notes: "A's workout",
         sets: [
           { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
@@ -253,7 +258,7 @@ describe('GET /workouts with a valid token', () => {
       },
       {
         id: workoutA2.id,
-        date: expect.any(String),
+        date: '2026-09-01',
         notes: 'Leg day',
         sets: [
           { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
@@ -295,7 +300,7 @@ describe('GET /workouts with a valid token', () => {
     const workouts: WorkoutDetail[] = res.body;
     // filter, not find: a duplicate entry for the empty workout should fail the test too.
     expect(workouts.filter((w) => w.id === emptyId)).toEqual([
-      { id: emptyId, date: expect.any(String), notes: 'Rest day', sets: [] },
+      { id: emptyId, date: '2026-09-05', notes: 'Rest day', sets: [] },
     ]);
     expect(workouts).toHaveLength(2);
   });
@@ -326,6 +331,7 @@ describe('GET /workouts/:id with a valid token', () => {
       [workout.id]
     );
     const set1 = set1Result.rows[0];
+    await setWorkoutDate(workout.id, '2026-09-05');
 
     const res = await request(app)
       .get(`/workouts/${workout.id}`)
@@ -335,9 +341,8 @@ describe('GET /workouts/:id with a valid token', () => {
     // Annotated so the expected object is checked against the type: a typo in a key is a compile error.
     const expected: WorkoutDetail = {
       id: workout.id,
-      // DATE goes through a JS Date and then JSON, so the exact string depends on the server's
-      // time zone. Asserting only that it's a string keeps the test from depending on that.
-      date: expect.any(String),
+      // Exactly the stored day, whatever the server's time zone (no JS Date in between).
+      date: '2026-09-05',
       notes: 'Leg day',
       sets: [
         // NUMERIC(6,2) comes back as a string, so weights are '100.00', not 100.
@@ -415,7 +420,7 @@ describe('PATCH /workouts/:id with a valid token', () => {
     // Same shape as GET /workouts/:id, so a client can use either response the same way.
     const expected: WorkoutDetail = {
       id: workout.id,
-      date: expect.any(String),
+      date: DATE_ONLY,
       notes: 'Heavy leg day',
       sets: [
         { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
@@ -435,7 +440,7 @@ describe('PATCH /workouts/:id with a valid token', () => {
       .send({ date: '2026-09-01' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ id: workout.id, notes: 'Leg day' });
+    expect(res.body).toMatchObject({ id: workout.id, date: '2026-09-01', notes: 'Leg day' });
     // date::text makes Postgres format the DATE itself ('YYYY-MM-DD'), so the check doesn't
     // depend on how a JS Date converts it in this machine's time zone.
     const saved = await pool.query<{ date: string; notes: string | null }>(
@@ -678,7 +683,7 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     // The whole workout comes back, not just the set, so a client can redraw the screen from it.
     const expected: WorkoutDetail = {
       id: workout.id,
-      date: expect.any(String),
+      date: DATE_ONLY,
       notes: 'Leg day',
       sets: [
         { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
@@ -918,7 +923,7 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
     const history = await request(app).get('/workouts').set('Authorization', authHeader(lifter.id));
     const workouts: WorkoutDetail[] = history.body;
     expect(workouts.filter((w) => w.id === otherWorkout.id)).toEqual([
-      { id: otherWorkout.id, date: expect.any(String), notes: 'Another day', sets: [] },
+      { id: otherWorkout.id, date: DATE_ONLY, notes: 'Another day', sets: [] },
     ]);
   });
 
@@ -1027,7 +1032,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(res.status).toBe(201);
     const expected: WorkoutDetail = {
       id: workout.id,
-      date: expect.any(String),
+      date: DATE_ONLY,
       notes: 'Leg day',
       sets: [
         { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },

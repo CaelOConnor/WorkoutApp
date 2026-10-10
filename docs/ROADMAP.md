@@ -23,6 +23,8 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [ ] `set_number` is client-supplied with no uniqueness or contiguity; deleting a set leaves gaps (1, 3) and duplicates are possible. Decide when adding/reordering sets in the app.
   - `POST /workouts/:id/sets` assigns highest + 1 when `set_number` is missing. Two concurrent adds to the same workout can both read the same highest number and save a duplicate: computing it inside the `INSERT` narrows the window but doesn't close it under `READ COMMITTED`. Unlikely with one user on one phone. A real fix is a `UNIQUE (workout_id, set_number)` constraint (then retry on 23505) or locking the workout row (`SELECT ... FOR UPDATE`); the constraint needs existing duplicates cleaned up first, so decide it with the gaps question.
 - [ ] Signup: no email format or minimum password length check.
+- [ ] `GET /exercises` is public (no `requireAuth`) and runs `SELECT * FROM exercises`, so it returns every user's custom exercises to anyone. It should require a token and return only the built-in ones (`created_by IS NULL`) plus the caller's own.
+- [ ] Endpoint for creating a custom exercise (e.g. `POST /exercises`, saved with `created_by` = the token user; the unique index on `(created_by, name)` already prevents duplicates). Until then, the app's exercise picker only offers seeded exercises.
 - [x] Split routes out of `app.ts` into `express.Router` files in `src/routes/` (auth, workouts, exercises, health). `requireAuth` runs on the whole workouts router.
 
 ## Phase 3: App screens
@@ -32,7 +34,8 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 
 ## Phase 4: Progress charts
 - [ ] Weight as a number: `pg` returns `NUMERIC` as a string (`"135.00"`). Parse it (or register a pg type parser) and change `WorkoutSet.weight` to `number`.
-- [ ] DATE time zone: `pg` turns a `DATE` into a JS `Date` at local midnight, then `res.json` sends it as a UTC ISO string, so the day can shift depending on the server's time zone. Return `'YYYY-MM-DD'` instead (pg type parser for OID 1082, or `to_char` in SQL) and change `Workout.date` to `string`. Then tighten the `date: expect.any(String)` assertion in the `GET /workouts/:id` test.
+- [x] DATE time zone (done early, in Phase 3, since week grouping needs the right day): a pg type parser for DATE (OID 1082) in `db/pool.ts` returns `'YYYY-MM-DD'`, and `Workout.date` is a `string`. Tests assert exact dates where they set one and the `YYYY-MM-DD` format elsewhere.
+- [ ] `POST /workouts` without a `date` falls back to `new Date()`, i.e. "today" in the server's time zone, which may not be the user's day. The app always sends a date, so it's harmless for now; consider making `date` required.
 - [ ] Endpoint for one exercise's progress over time (e.g. top weight or volume per date).
 - [ ] Chart screen (Victory Native or react-native-gifted-charts, per Notes.md).
 

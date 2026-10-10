@@ -8,8 +8,8 @@ export type WeightUnit = 'lb' | 'kg';
 
 // ---------- Database rows (mirror backend/migrations/) ----------
 // These describe what `pg` hands back for each table. Nullable columns are `T | null`.
-// Note: `pg` turns DATE/TIMESTAMP columns into JS `Date` objects, but once sent through
-// res.json() they become ISO strings on the client.
+// Note: `pg` turns TIMESTAMP columns into JS `Date` objects (ISO strings once sent through
+// res.json()). DATE columns are the exception: db/pool.ts keeps them as 'YYYY-MM-DD' strings.
 
 export interface User {
   id: number;
@@ -31,7 +31,8 @@ export interface Exercise {
 export interface Workout {
   id: number;
   user_id: number;
-  date: Date;
+  // A calendar day, 'YYYY-MM-DD', with no time or time zone (see db/pool.ts).
+  date: string;
   notes: string | null;
 }
 
