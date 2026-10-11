@@ -3,12 +3,23 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    // Imports keep exactly the form they're written in: `import type` is always erased, a plain
+    // `import` always stays. So importing a type without `type` is an error (TS1484), which
+    // guarantees @shared/models (backend code) never ends up in the app bundle.
+    "verbatimModuleSyntax": true,
+    // Global type packages to load. TypeScript 6 loads none by default; Jest's globals
+    // (describe, it, expect) come from @types/jest.
+    "types": ["jest"],
     "paths": {
       "@/*": [
         "./src/*"
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      // The backend's API types, shared with the app. Type-only: see verbatimModuleSyntax.
+      "@shared/models": [
+        "../backend/src/types/models.ts"
       ]
     }
   },

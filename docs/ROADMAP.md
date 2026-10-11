@@ -30,7 +30,8 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 ## Phase 3: App screens
 - [ ] Log today's workout; history list grouped by week; workout detail with edit/delete.
 - [ ] Groundwork: real `API_URL` (placeholder in `signup.tsx`), login screen, token storage (Expo SecureStore), replace the Home/Explore template screens.
-- [ ] Type the app: `fetch` responses are `any`. Reuse `backend/src/types/models.ts` (shared package or path alias) and validate responses.
+- [x] API layer (`mobile/src/api/`): `request<T>` with a required response guard, `ApiError` / `NetworkError` / `InvalidResponseError`, 10 s timeout, `onUnauthorized` on 401 (not for `/auth/login`). Shared types via the `@shared/models` path alias, type-only. Jest (`jest-expo`) set up.
+- [ ] Move `signup.tsx` onto the API client (its `fetch` response is still `any`, and its `API_URL` is a placeholder).
 
 ## Phase 4: Progress charts
 - [ ] Weight as a number: `pg` returns `NUMERIC` as a string (`"135.00"`). Parse it (or register a pg type parser) and change `WorkoutSet.weight` to `number`.

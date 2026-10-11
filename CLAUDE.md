@@ -7,7 +7,7 @@ Workout tracker: log sets (exercise, reps, weight) and chart progress over time.
 - **backend/**: Node 24, Express 5, TypeScript 7 (strict, `noUncheckedIndexedAccess`), CommonJS. `tsx` for dev, `tsc` for build.
 - **DB**: PostgreSQL 16 via `pg` (raw SQL, no ORM). Schema is managed by node-pg-migrate: plain-SQL migrations in `backend/migrations/`, tracked in the `pgmigrations` table. Never edit a migration that has run; add a new one.
 - **Auth**: bcrypt password hashes, JWT (`jsonwebtoken`, 7-day expiry). `JWT_SECRET` and `DATABASE_URL` come from `backend/.env` (not committed).
-- **Tests**: Vitest + supertest (backend).
+- **Tests**: Vitest + supertest (backend); Jest via `jest-expo` with a mocked `fetch` (mobile).
 - **Docker Compose**: `postgres` + `backend` services.
 
 ## Layout
@@ -22,6 +22,8 @@ backend/
   migrations/           SQL migrations (Up/Down); tables: users, exercises, workouts, sets
   test/                 Vitest tests
 mobile/src/app/         Expo Router screens; components/, constants/, hooks/
+mobile/src/api/         API client (request<T> + error classes), response type guards, API URL
+                        Backend types via the `@shared/models` alias (type-only imports; verbatimModuleSyntax)
 docs/ROADMAP.md         Known next tasks
 ```
 
@@ -34,7 +36,7 @@ docs/ROADMAP.md         Known next tasks
 - `npm run migrate:create -- <name>` / `migrate:up` / `migrate:down`: new SQL migration / apply pending / roll back the last one (uses `DATABASE_URL` from `.env`)
 - Root: `docker compose up -d postgres` (DB only) or `docker compose up --build` (backend runs migrations on start). Tests rebuild the test DB from migrations.
 - Tests use the separate `postgres-test` container on port 5433 (database `workoutapp_test`), not the dev DB on 5432: `docker compose up -d postgres-test` before `npm test`.
-- mobile/: `npm start` (Expo), `npm run lint`
+- mobile/: `npm start` (Expo), `npm test` (Jest), `npm run typecheck` (includes tests), `npm run lint`. API URL: `EXPO_PUBLIC_API_URL` in `mobile/.env.local`, else in dev the Metro host LAN IP + `:3000`.
 
 ## Working rules
 - **Never commit or push.** The user reviews and commits.
