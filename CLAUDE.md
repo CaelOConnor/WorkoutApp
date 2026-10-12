@@ -23,6 +23,7 @@ backend/
   test/                 Vitest tests
 mobile/src/app/         Expo Router screens; components/, constants/, hooks/
 mobile/src/api/         API client (request<T> + error classes), response type guards, API URL
+mobile/src/auth/        AuthProvider (useAuth/useApi), SecureStore token, splash screen controller
                         Backend types via the `@shared/models` alias (type-only imports; verbatimModuleSyntax)
 docs/ROADMAP.md         Known next tasks
 ```

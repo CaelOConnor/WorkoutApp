@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { createQueryClient, refetchOnAppForeground } from '@/api/query-client';
-import { AuthProvider } from '@/auth/auth-provider';
+import { AuthProvider, useAuth } from '@/auth/auth-provider';
 import { SplashScreenController } from '@/auth/splash-screen-controller';
 
 // Once, when the app loads: TanStack Query refetches stale data when the app comes back to the
@@ -13,8 +13,8 @@ refetchOnAppForeground();
 
 // Root layout: wraps every screen in src/app/ in the app-wide providers. Order matters:
 // AuthProvider uses the query client (to clear it on logout), so it goes inside
-// QueryClientProvider, and SplashScreenController reads the auth status, so it goes inside
-// AuthProvider. Route guards (Stack.Protected) come in step 4B.
+// QueryClientProvider, and SplashScreenController and RootNavigator read the auth status, so
+// they go inside AuthProvider.
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   // useState's initializer runs once, so the cache survives re-renders of this layout.
@@ -25,12 +25,33 @@ export default function RootLayout() {
       <AuthProvider>
         <SplashScreenController />
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="index" options={{ title: 'Workouts' }} />
-            <Stack.Screen name="signup" options={{ title: 'Sign up' }} />
-          </Stack>
+          <RootNavigator />
         </ThemeProvider>
       </AuthProvider>
     </QueryClientProvider>
+  );
+}
+
+// A separate component so it can call useAuth(): RootLayout itself is outside AuthProvider.
+//
+// Stack.Protected: a screen is only reachable while its guard is true. When a guard turns false
+// (logging in or out), its screens are dropped from history and the user is sent to the first
+// screen that is allowed, so no navigation code is needed after login or logout.
+// While the saved token is still being read ('loading') the login group is allowed, but the
+// splash screen covers it, and it's replaced as soon as a token is found.
+function RootNavigator() {
+  const { status } = useAuth();
+  const signedIn = status === 'signedIn';
+
+  return (
+    <Stack>
+      <Stack.Protected guard={signedIn}>
+        <Stack.Screen name="index" options={{ title: 'Workouts' }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!signedIn}>
+        <Stack.Screen name="login" options={{ title: 'Log in' }} />
+        <Stack.Screen name="signup" options={{ title: 'Create account' }} />
+      </Stack.Protected>
+    </Stack>
   );
 }

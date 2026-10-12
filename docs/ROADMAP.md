@@ -29,10 +29,10 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 
 ## Phase 3: App screens
 - [ ] Log today's workout; history list grouped by week; workout detail with edit/delete.
-- [ ] Groundwork: real `API_URL` (placeholder in `signup.tsx`), login screen, token storage (Expo SecureStore), replace the Home/Explore template screens.
+- [x] Groundwork: real API URL (`mobile/src/api/config.ts`), login screen, token storage (Expo SecureStore), template screens replaced.
 - [x] API layer (`mobile/src/api/`): `request<T>` with a required response guard, `ApiError` / `NetworkError` / `InvalidResponseError`, 10 s timeout, `onUnauthorized` on 401 (not for `/auth/login`). Shared types via the `@shared/models` path alias, type-only. Jest (`jest-expo`) set up.
 - [x] Auth state (`mobile/src/auth/`): `AuthProvider` with `status` (`loading` / `signedOut` / `signedIn`), token in SecureStore, `login`, `signup` (then logs in), `logout` (also clears the TanStack Query cache), logout on any 401. Splash screen stays up until the saved token is read. TanStack Query in the root layout, refetching on return to the foreground; retries only network errors and 5xx.
-- [ ] Move `signup.tsx` onto the API client (its `fetch` response is still `any`, and its `API_URL` is a placeholder).
+- [x] Auth screens: root layout guards routes with `Stack.Protected` (login/signup only signed out, the rest only signed in). Login and signup share `AuthForm` (server and network errors shown, button busy while submitting); signup uses the API client. Logout button on the placeholder home screen. RNTL tests render the real `src/app/` with `renderRouter` (`src/__tests__/`).
 
 ## Phase 4: Progress charts
 - [ ] Weight as a number: `pg` returns `NUMERIC` as a string (`"135.00"`). Parse it (or register a pg type parser) and change `WorkoutSet.weight` to `number`.
