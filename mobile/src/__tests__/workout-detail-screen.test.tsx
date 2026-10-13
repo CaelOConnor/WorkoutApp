@@ -12,6 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Alert, type AlertButton } from 'react-native';
 
 import { TOKEN_KEY } from '@/auth/token-storage';
+import { doubleTap } from '@/test-utils/double-tap';
 import {
   jsonResponse,
   mockApi,
@@ -48,6 +49,26 @@ function fakeServer() {
     workout: initialWorkout(),
     bodies: [],
   };
+  // While set, every write waits for it before answering, like a slow network: the app sees the
+  // request as in flight until the test calls the release function holdWrites() returned.
+  let writesGate: Promise<void> | null = null;
+  function holdWrites(): () => void {
+    let release = () => {};
+    writesGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      writesGate = null;
+      release();
+    };
+  }
+  // Wraps a route handler so it waits at the gate (if one is set) before running.
+  function write(handler: MockRoutes[string]): MockRoutes[string] {
+    return async (request) => {
+      await writesGate;
+      return handler(request);
+    };
+  }
   const notFound = () => jsonResponse(404, { error: 'Workout not found' });
 
   // Updates the stored workout and returns 200 with it, like the real routes.
@@ -60,18 +81,18 @@ function fakeServer() {
   const routes: MockRoutes = {
     'GET /workouts': () => jsonResponse(200, state.workout ? [state.workout] : []),
     'GET /workouts/3': () => (state.workout ? jsonResponse(200, state.workout) : notFound()),
-    'PATCH /workouts/3': ({ body }) => {
+    'PATCH /workouts/3': write(({ body }) => {
       state.bodies.push(body);
       // `as` (a type assertion, not a check): the fake trusts the app's bodies, and the tests
       // check them exactly through state.bodies. The real server validates them.
       const { date, notes } = body as UpdateWorkoutBody;
       return save((w) => ({ ...w, date: date ?? w.date, notes: notes === undefined ? w.notes : notes }));
-    },
-    'DELETE /workouts/3': () => {
+    }),
+    'DELETE /workouts/3': write(() => {
       state.workout = null;
       return noContentResponse();
-    },
-    'POST /workouts/3/sets': ({ body }) => {
+    }),
+    'POST /workouts/3/sets': write(({ body }) => {
       state.bodies.push(body);
       const { exercise_id, reps, weight, unit } = body as AddSetBody;
       if (!state.workout) return notFound();
@@ -90,27 +111,28 @@ function fakeServer() {
       });
       // The real route answers 201 Created.
       return jsonResponse(201, state.workout);
-    },
-    'DELETE /workouts/3/exercises/1': () =>
-      save((w) => ({ ...w, sets: w.sets.filter((s) => s.exercise_id !== 1) })),
+    }),
+    'DELETE /workouts/3/exercises/1': write(() =>
+      save((w) => ({ ...w, sets: w.sets.filter((s) => s.exercise_id !== 1) }))
+    ),
   };
   for (const id of [31, 32, 33]) {
-    routes[`PATCH /workouts/3/sets/${id}`] = ({ body }) => {
+    routes[`PATCH /workouts/3/sets/${id}`] = write(({ body }) => {
       state.bodies.push(body);
       const { reps, weight, unit } = body as { reps: number; weight: number; unit: 'lb' | 'kg' };
       return save((w) => ({
         ...w,
         sets: w.sets.map((s) => (s.id === id ? { ...s, reps, weight: weight.toFixed(2), unit } : s)),
       }));
-    };
-    routes[`DELETE /workouts/3/sets/${id}`] = () => {
+    });
+    routes[`DELETE /workouts/3/sets/${id}`] = write(() => {
       save((w) => ({ ...w, sets: w.sets.filter((s) => s.id !== id) }));
       return noContentResponse();
-    };
+    });
   }
 
   const fetchMock = mockApi(routes);
-  return { state, fetchMock };
+  return { state, fetchMock, holdWrites };
 }
 
 // Alert.alert shows a native dialog, which doesn't exist in tests. This replaces it with one that
@@ -120,6 +142,22 @@ function answerAlerts(...answers: string[]) {
   return jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
     buttons?.find((b) => b.text !== undefined && answers.includes(b.text))?.onPress?.();
   });
+}
+
+// Records each Alert.alert without answering it, like a dialog the user hasn't tapped yet.
+// answer('Delete') presses that button on the oldest open dialog.
+function recordAlerts() {
+  const open: AlertButton[][] = [];
+  const spy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
+    open.push(buttons ?? []);
+  });
+  return {
+    spy,
+    async answer(text: string) {
+      const buttons = open.shift();
+      await act(async () => buttons?.find((b) => b.text === text)?.onPress?.());
+    },
+  };
 }
 
 beforeEach(async () => {
@@ -221,7 +259,8 @@ it('deletes a set after confirming', async () => {
   expect(await screen.findByText('Set 1 · 5 reps × 235 lb')).toBeOnTheScreen();
   expect(screen.queryByText(/225 lb/)).not.toBeOnTheScreen();
   expect(app.getPathname()).toBe('/workouts/3');
-  expect(alert).toHaveBeenCalledWith('Delete this set?', undefined, expect.any(Array));
+  // The 4th argument is the dialog's options (dismissable on Android).
+  expect(alert).toHaveBeenCalledWith('Delete this set?', undefined, expect.any(Array), expect.anything());
   expect(requestsMade(fetchMock)).toContain('DELETE /workouts/3/sets/31');
 });
 
@@ -286,4 +325,127 @@ it('deletes the workout after confirming and goes back to an updated history', a
   expect(await screen.findByText('No workouts yet')).toBeOnTheScreen();
   expect(app.getPathname()).toBe('/');
   expect(requestsMade(fetchMock)).toContain('DELETE /workouts/3');
+});
+
+// Each button that navigates or sends a request, tapped twice: one screen or one request, never two.
+describe('double-tapping', () => {
+  // How many times exactly this request ('POST /workouts/3/sets', ...) has been made.
+  function count(fetchMock: jest.SpiedFunction<typeof fetch>, request: string) {
+    return requestsMade(fetchMock).filter((r) => r === request).length;
+  }
+
+  it('a set opens its sheet once', async () => {
+    fakeServer();
+    const app = await renderApp('/workouts/3');
+
+    await doubleTap(await screen.findByRole('button', { name: 'Set 2 · 5 reps × 235 lb' }));
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/sets/32'));
+    await act(() => router.back());
+
+    expect(app.getPathname()).toBe('/workouts/3');
+  });
+
+  it('Edit opens its sheet once', async () => {
+    fakeServer();
+    const app = await renderApp('/workouts/3');
+
+    await doubleTap(await screen.findByRole('button', { name: 'Edit' }));
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/edit'));
+    await act(() => router.back());
+
+    expect(app.getPathname()).toBe('/workouts/3');
+  });
+
+  it('Cancel in the set sheet closes only the sheet', async () => {
+    fakeServer();
+    const app = await renderApp('/workouts/3');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Set 2 · 5 reps × 235 lb' }));
+
+    await doubleTap(await screen.findByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
+  });
+
+  // The second tap lands while the first request is still on its way, as on a real network.
+  it('+ Add set adds one set', async () => {
+    const { fetchMock, holdWrites } = fakeServer();
+    await renderApp('/workouts/3');
+    const release = holdWrites();
+
+    await doubleTap(await screen.findByRole('button', { name: 'Add Squat set' }));
+    release();
+
+    expect(await within(card('Squat')).findByText('Set 3 · 5 reps × 235 lb')).toBeOnTheScreen();
+    expect(count(fetchMock, 'POST /workouts/3/sets')).toBe(1);
+  });
+
+  it('Save in the set sheet saves once and closes only the sheet', async () => {
+    const { fetchMock, holdWrites } = fakeServer();
+    const app = await renderApp('/workouts/3');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Set 2 · 5 reps × 235 lb' }));
+    const release = holdWrites();
+
+    await doubleTap(await screen.findByRole('button', { name: 'Save' }));
+    release();
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
+    expect(count(fetchMock, 'PATCH /workouts/3/sets/32')).toBe(1);
+  });
+
+  it('Save in the edit sheet saves once and closes only the sheet', async () => {
+    const { fetchMock, holdWrites } = fakeServer();
+    const app = await renderApp('/workouts/3');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Edit' }));
+    const release = holdWrites();
+
+    await doubleTap(await screen.findByRole('button', { name: 'Save' }));
+    release();
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
+    expect(count(fetchMock, 'PATCH /workouts/3')).toBe(1);
+  });
+
+  // The second tap lands before the first one's dialog has been answered.
+  it('Delete set asks once and deletes once', async () => {
+    const { fetchMock } = fakeServer();
+    const dialogs = recordAlerts();
+    const app = await renderApp('/workouts/3');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Set 2 · 5 reps × 235 lb' }));
+
+    await doubleTap(await screen.findByRole('button', { name: 'Delete set' }));
+    expect(dialogs.spy).toHaveBeenCalledTimes(1);
+    await dialogs.answer('Delete');
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
+    expect(count(fetchMock, 'DELETE /workouts/3/sets/32')).toBe(1);
+  });
+
+  it('the exercise menu opens once and removes the exercise once', async () => {
+    const { fetchMock } = fakeServer();
+    const dialogs = recordAlerts();
+    await renderApp('/workouts/3');
+
+    await doubleTap(await screen.findByRole('button', { name: 'Squat options' }));
+    expect(dialogs.spy).toHaveBeenCalledTimes(1);
+    await dialogs.answer('Remove exercise');
+    await dialogs.answer('Remove');
+
+    await waitFor(() => expect(screen.queryByTestId('Squat card')).not.toBeOnTheScreen());
+    expect(count(fetchMock, 'DELETE /workouts/3/exercises/1')).toBe(1);
+  });
+
+  it('Delete workout asks once, deletes once, and lands on the history', async () => {
+    const { fetchMock } = fakeServer();
+    const dialogs = recordAlerts();
+    const app = await renderApp('/');
+    await fireEvent.press(await screen.findByRole('button', { name: /Wed, Oct 14/ }));
+
+    await doubleTap(await screen.findByRole('button', { name: 'Delete workout' }));
+    expect(dialogs.spy).toHaveBeenCalledTimes(1);
+    await dialogs.answer('Delete');
+
+    expect(await screen.findByText('No workouts yet')).toBeOnTheScreen();
+    expect(app.getPathname()).toBe('/');
+    expect(count(fetchMock, 'DELETE /workouts/3')).toBe(1);
+  });
 });

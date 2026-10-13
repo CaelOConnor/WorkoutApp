@@ -5,11 +5,13 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/api/client';
 import { errorMessage } from '@/api/error-message';
 import { Button } from '@/components/button';
+import { ask, confirm } from '@/components/dialogs';
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
 import { TextButton } from '@/components/text-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
 import { formatFullDate } from '@/workouts/dates';
 import { formatSetLine, groupSetsByExercise, parseRouteId, type ExerciseGroup } from '@/workouts/detail';
@@ -66,56 +68,52 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
   const groups = groupSetsByExercise(workout.sets);
   const id = String(workout.id);
 
-  // Runs a change and shows any failure in a dialog. Success needs nothing here: the mutation
-  // refreshes the data, and the screen re-renders from it.
-  async function attempt(failureTitle: string, change: () => Promise<unknown>) {
-    try {
-      await change();
-    } catch (e: unknown) {
-      Alert.alert(failureTitle, errorMessage(e));
-    }
+  // One guard for everything on this screen: a second tap (or a tap on something else) is
+  // ignored while a change, a dialog or a navigation from the first one is still going.
+  const guard = usePressGuard();
+
+  // Runs a change through the guard and shows any failure in a dialog. Success needs nothing
+  // here: the mutation refreshes the data, and the screen re-renders from it.
+  function change(failureTitle: string, action: Parameters<typeof guard.run>[0]) {
+    void guard.run(async (leave) => {
+      try {
+        await action(leave);
+      } catch (e: unknown) {
+        Alert.alert(failureTitle, errorMessage(e));
+      }
+    });
   }
 
-  // The card's menu. Alert doubles as a simple cross-platform menu: a title and a list of buttons.
-  function openExerciseMenu(group: ExerciseGroup) {
-    Alert.alert(group.exerciseName, undefined, [
-      { text: 'Remove exercise', style: 'destructive', onPress: () => confirmRemove(group) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }
-
-  function confirmRemove(group: ExerciseGroup) {
-    Alert.alert(
-      `Remove ${group.exerciseName}?`,
-      `This deletes its ${setCountLabel(group.sets.length)}.`,
-      [
+  // The card's menu, then a confirmation. ask() doubles as a simple cross-platform menu.
+  function removeExerciseFlow(group: ExerciseGroup) {
+    change('Could not remove exercise', async () => {
+      const choice = await ask(group.exerciseName, undefined, [
+        { text: 'Remove exercise', style: 'destructive' },
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () =>
-            void attempt('Could not remove exercise', () =>
-              removeExercise.mutateAsync(group.exerciseId)
-            ),
-        },
-      ]
-    );
+      ]);
+      if (choice !== 'Remove exercise') {
+        return;
+      }
+      const sure = await confirm(
+        `Remove ${group.exerciseName}?`,
+        `This deletes its ${setCountLabel(group.sets.length)}.`,
+        'Remove'
+      );
+      if (sure) {
+        await removeExercise.mutateAsync(group.exerciseId);
+      }
+    });
   }
 
-  function confirmDeleteWorkout() {
-    Alert.alert('Delete this workout?', 'This deletes all of its sets.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () =>
-          void attempt('Could not delete workout', async () => {
-            await deleteWorkout.mutateAsync();
-            // Back to the history, even if this screen was opened from a link with nothing below.
-            router.dismissTo('/');
-          }),
-      },
-    ]);
+  function deleteWorkoutFlow() {
+    change('Could not delete workout', async (leave) => {
+      if (!(await confirm('Delete this workout?', 'This deletes all of its sets.', 'Delete'))) {
+        return;
+      }
+      await deleteWorkout.mutateAsync();
+      // Back to the history, even if this screen was opened from a link with nothing below.
+      leave(() => router.dismissTo('/'));
+    });
   }
 
   return (
@@ -125,7 +123,11 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
           headerRight: () => (
             <TextButton
               label="Edit"
-              onPress={() => router.push({ pathname: '/workouts/[id]/edit', params: { id } })}
+              onPress={() =>
+                guard.navigate(() =>
+                  router.push({ pathname: '/workouts/[id]/edit', params: { id } })
+                )
+              }
             />
           ),
         }}
@@ -159,7 +161,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
               <TextButton
                 label="⋯"
                 accessibilityLabel={`${group.exerciseName} options`}
-                onPress={() => openExerciseMenu(group)}
+                onPress={() => removeExerciseFlow(group)}
               />
             </View>
 
@@ -172,10 +174,12 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
                   accessibilityLabel={line}
                   accessibilityHint="Edit or delete this set"
                   onPress={() =>
-                    router.push({
-                      pathname: '/workouts/[id]/sets/[setId]',
-                      params: { id, setId: String(set.id) },
-                    })
+                    guard.navigate(() =>
+                      router.push({
+                        pathname: '/workouts/[id]/sets/[setId]',
+                        params: { id, setId: String(set.id) },
+                      })
+                    )
                   }
                   style={({ pressed }) => [
                     styles.setRow,
@@ -194,9 +198,9 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
                   accessibilityLabel={`Add ${group.exerciseName} set`}
                   disabled={adding}
                   onPress={() =>
-                    void attempt('Could not add set', () =>
-                      addSet.mutateAsync(addSetBodyFrom(lastSet))
-                    )
+                    change('Could not add set', async () => {
+                      await addSet.mutateAsync(addSetBodyFrom(lastSet));
+                    })
                   }
                 />
               </View>
@@ -210,7 +214,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
           label="Delete workout"
           variant="danger"
           loading={deleteWorkout.isPending}
-          onPress={confirmDeleteWorkout}
+          onPress={deleteWorkoutFlow}
         />
       </View>
     </ScrollView>

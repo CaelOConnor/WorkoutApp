@@ -1,10 +1,12 @@
 // Integration tests for the workout history (home) screen: the real app from src/app/, signed in,
 // with a fake backend.
 import type { WorkoutDetail } from '@shared/models';
+import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as SecureStore from 'expo-secure-store';
 
 import { TOKEN_KEY } from '@/auth/token-storage';
+import { doubleTap } from '@/test-utils/double-tap';
 import { jsonResponse, mockApi, requestsMade } from '@/test-utils/mock-api';
 
 jest.mock('@/api/config', () => ({ getApiUrl: () => 'http://api.test' }));
@@ -128,4 +130,33 @@ it('opens the log workout screen from the header', async () => {
   await fireEvent.press(await screen.findByRole('button', { name: 'Log workout' }));
 
   await waitFor(() => expect(app.getPathname()).toBe('/workouts/new'));
+});
+
+// Double-tapping something that navigates must open one screen, not two stacked copies. A single
+// "back" then has to return to the history.
+describe('double-tapping', () => {
+  it('a workout row opens it once', async () => {
+    mockApi({
+      'GET /workouts': () => jsonResponse(200, WORKOUTS),
+      'GET /workouts/2': () => jsonResponse(200, WORKOUTS[1]),
+    });
+    const app = await renderApp();
+
+    await doubleTap(await screen.findByRole('button', { name: /Sun, Oct 11/ }));
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/2'));
+    await act(() => router.back());
+
+    expect(app.getPathname()).toBe('/');
+  });
+
+  it('+ Log workout opens it once', async () => {
+    mockApi({ 'GET /workouts': () => jsonResponse(200, []) });
+    const app = await renderApp();
+
+    await doubleTap(await screen.findByRole('button', { name: 'Log workout' }));
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/new'));
+    await act(() => router.back());
+
+    expect(app.getPathname()).toBe('/');
+  });
 });

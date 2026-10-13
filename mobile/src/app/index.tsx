@@ -9,6 +9,7 @@ import { TextButton } from '@/components/text-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
 import { formatWorkoutDate, groupByWeek, localDateString } from '@/workouts/dates';
 import { exerciseNames, setCountLabel } from '@/workouts/summary';
@@ -19,6 +20,8 @@ export default function HistoryScreen() {
   const { logout } = useAuth();
   const router = useRouter();
   const workouts = useWorkouts();
+  // Ignores a second tap on a row or "+ Log workout" until this screen is shown again.
+  const guard = usePressGuard();
   // True only during a pull-to-refresh, so the list's spinner doesn't also appear for background
   // refetches (e.g. on returning to the app), which would be distracting.
   const [refreshing, setRefreshing] = useState(false);
@@ -41,7 +44,7 @@ export default function HistoryScreen() {
             <TextButton
               label="+ Log workout"
               accessibilityLabel="Log workout"
-              onPress={() => router.push('/workouts/new')}
+              onPress={() => guard.navigate(() => router.push('/workouts/new'))}
             />
           ),
         }}
@@ -72,7 +75,9 @@ export default function HistoryScreen() {
               workout={item}
               // A typed route: pathname must be a real route, and params must match its [id].
               onPress={() =>
-                router.push({ pathname: '/workouts/[id]', params: { id: String(item.id) } })
+                guard.navigate(() =>
+                  router.push({ pathname: '/workouts/[id]', params: { id: String(item.id) } })
+                )
               }
             />
           )}

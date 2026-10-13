@@ -1,14 +1,16 @@
 import type { WeightUnit, WorkoutDetailSet } from '@shared/models';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { errorMessage } from '@/api/error-message';
 import { Button } from '@/components/button';
+import { confirm } from '@/components/dialogs';
 import { Sheet } from '@/components/sheet';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
 import { groupSetsByExercise, parseRouteId } from '@/workouts/detail';
 import { parseSetForm, setFormFrom, type SetForm } from '@/workouts/forms';
@@ -69,45 +71,49 @@ function SetEditor({ workoutId, set, title }: SetEditorProps) {
   const [form, setForm] = useState<SetForm>(() => setFormFrom(set));
   const [error, setError] = useState<string | null>(null);
   const busy = updateSet.isPending || deleteSet.isPending;
+  // Save, Delete and Cancel share one lock: a second tap does nothing while one is running, and
+  // after a success the sheet stays locked while it closes, so a late tap can't close the
+  // workout screen under it too.
+  const guard = usePressGuard();
 
   // Partial<SetForm>: any subset of the fields, merged over the current ones.
   function update(change: Partial<SetForm>) {
     setForm((current) => ({ ...current, ...change }));
   }
 
-  async function save() {
-    const parsed = parseSetForm(form);
-    if (!parsed.ok) {
-      setError(parsed.error);
-      return;
-    }
-    setError(null);
-    try {
-      await updateSet.mutateAsync({ setId: set.id, values: parsed.value });
-      router.back();
-    } catch (e: unknown) {
-      setError(errorMessage(e));
-    }
+  function save() {
+    void guard.run(async (leave) => {
+      const parsed = parseSetForm(form);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+      setError(null);
+      try {
+        await updateSet.mutateAsync({ setId: set.id, values: parsed.value });
+        leave(() => router.back());
+      } catch (e: unknown) {
+        setError(errorMessage(e));
+      }
+    });
   }
 
-  function confirmDelete() {
-    Alert.alert('Delete this set?', undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void remove() },
-    ]);
-  }
-
-  async function remove() {
-    try {
-      await deleteSet.mutateAsync(set.id);
-      router.back();
-    } catch (e: unknown) {
-      setError(errorMessage(e));
-    }
+  function remove() {
+    void guard.run(async (leave) => {
+      if (!(await confirm('Delete this set?', undefined, 'Delete'))) {
+        return;
+      }
+      try {
+        await deleteSet.mutateAsync(set.id);
+        leave(() => router.back());
+      } catch (e: unknown) {
+        setError(errorMessage(e));
+      }
+    });
   }
 
   return (
-    <Sheet title={title}>
+    <Sheet title={title} guard={guard}>
       <View style={styles.row}>
         <View style={styles.grow}>
           <TextField
@@ -138,8 +144,8 @@ function SetEditor({ workoutId, set, title }: SetEditorProps) {
         </ThemedText>
       ) : null}
 
-      <Button label="Save" loading={updateSet.isPending} onPress={() => void save()} />
-      <Button label="Delete set" variant="danger" loading={deleteSet.isPending} onPress={confirmDelete} />
+      <Button label="Save" loading={updateSet.isPending} onPress={save} />
+      <Button label="Delete set" variant="danger" loading={deleteSet.isPending} onPress={remove} />
     </Sheet>
   );
 }

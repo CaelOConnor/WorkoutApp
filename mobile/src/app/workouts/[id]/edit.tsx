@@ -7,6 +7,7 @@ import { Button } from '@/components/button';
 import { Sheet } from '@/components/sheet';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
+import { usePressGuard } from '@/hooks/use-press-guard';
 import { parseRouteId } from '@/workouts/detail';
 import { parseWorkoutForm, workoutFormFrom, type WorkoutForm } from '@/workouts/forms';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
@@ -34,24 +35,28 @@ function WorkoutEditor({ workout }: { workout: WorkoutDetail }) {
   const { updateWorkout } = useWorkoutMutations(workout.id);
   const [form, setForm] = useState<WorkoutForm>(() => workoutFormFrom(workout));
   const [error, setError] = useState<string | null>(null);
+  // Shared with Cancel; see the set sheet for why.
+  const guard = usePressGuard();
 
-  async function save() {
-    const parsed = parseWorkoutForm(form);
-    if (!parsed.ok) {
-      setError(parsed.error);
-      return;
-    }
-    setError(null);
-    try {
-      await updateWorkout.mutateAsync(parsed.value);
-      router.back();
-    } catch (e: unknown) {
-      setError(errorMessage(e));
-    }
+  function save() {
+    void guard.run(async (leave) => {
+      const parsed = parseWorkoutForm(form);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+      setError(null);
+      try {
+        await updateWorkout.mutateAsync(parsed.value);
+        leave(() => router.back());
+      } catch (e: unknown) {
+        setError(errorMessage(e));
+      }
+    });
   }
 
   return (
-    <Sheet title="Edit workout">
+    <Sheet title="Edit workout" guard={guard}>
       {/* Typed as text for now; a native date picker can replace it later. */}
       <TextField
         label="Date"
@@ -78,7 +83,7 @@ function WorkoutEditor({ workout }: { workout: WorkoutDetail }) {
         </ThemedText>
       ) : null}
 
-      <Button label="Save" loading={updateWorkout.isPending} onPress={() => void save()} />
+      <Button label="Save" loading={updateWorkout.isPending} onPress={save} />
     </Sheet>
   );
 }
