@@ -13,6 +13,7 @@ import type {
 } from '../types/models';
 import type { NoParams } from './types';
 import setsRouter from './sets';
+import workoutExercisesRouter from './workoutExercises';
 
 // Mounted at /workouts in app.ts, so '/' here is /workouts.
 const workoutsRouter = Router();
@@ -26,6 +27,8 @@ workoutsRouter.use(requireAuth);
 // so they're covered by it too. '/:id/sets' only matches paths with /sets after the id, so it
 // doesn't clash with the '/:id' routes below.
 workoutsRouter.use('/:id/sets', setsRouter);
+// Same for removing one exercise (all its sets) from a workout.
+workoutsRouter.use('/:id/exercises', workoutExercisesRouter);
 
 workoutsRouter.post(
   '/',

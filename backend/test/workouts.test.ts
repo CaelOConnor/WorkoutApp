@@ -1219,3 +1219,149 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(body.sets[1]).toMatchObject({ set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER });
   });
 });
+
+describe('DELETE /workouts/:id/exercises/:exerciseId with a valid token', () => {
+  let lifter: PublicUser;
+  let intruder: PublicUser;
+  let squatId: number;
+  let benchId: number;
+  let rowId: number;
+  let workout: Pick<Workout, 'id'>;
+  let intruderWorkout: Pick<Workout, 'id'>;
+
+  beforeEach(async () => {
+    await resetDb();
+    lifter = await createUser('lifter@example.com', 'password');
+    intruder = await createUser('intruder@example.com', 'password');
+    squatId = (await createExercise('Squat')).id;
+    benchId = (await createExercise('Bench')).id;
+    rowId = (await createExercise('Row')).id;
+    // Squat sets 1, 3, 5 with Bench sets 2 and 4 in between, so the Squat sets aren't contiguous.
+    workout = await createWorkout(lifter.id, squatId, 'Mixed day');
+    await addSet(workout.id, benchId, 2, 8, 135);
+    await addSet(workout.id, squatId, 3, 5, 110);
+    await addSet(workout.id, benchId, 4, 8, 140);
+    await addSet(workout.id, squatId, 5, 5, 120);
+    intruderWorkout = await createWorkout(intruder.id, squatId, 'Intruder day');
+  });
+
+  it("removes every set of that exercise and returns the updated workout", async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(200);
+    const body: WorkoutDetail = res.body;
+    expect(body).toMatchObject({ id: workout.id, notes: 'Mixed day' });
+    expect(body.sets.map((s) => [s.exercise_name, s.set_number])).toEqual([
+      ['Bench', 2],
+      ['Bench', 4],
+    ]);
+    // And in the table, not just in the response.
+    const squats = await pool.query('SELECT id FROM sets WHERE workout_id = $1 AND exercise_id = $2', [
+      workout.id,
+      squatId,
+    ]);
+    expect(squats.rowCount).toBe(0);
+  });
+
+  it("doesn't touch the same exercise in other workouts", async () => {
+    await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(await setIdsOf(intruderWorkout.id)).toHaveLength(1);
+  });
+
+  it('keeps the workout, with sets: [], after its last exercise is removed', async () => {
+    await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${benchId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: workout.id, date: DATE_ONLY, notes: 'Mixed day', sets: [] });
+  });
+
+  it('returns 404 for an exercise the workout has no sets of', async () => {
+    const before = await setIdsOf(workout.id);
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${rowId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Exercise not in this workout' });
+    expect(await setIdsOf(workout.id)).toEqual(before);
+  });
+
+  it("returns 404 for an exercise id that doesn't exist", async () => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/999999`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Exercise not in this workout' });
+  });
+
+  it('returns 404 when the same exercise is removed twice', async () => {
+    const first = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+    const second = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(404);
+  });
+
+  it("returns 404 Workout not found for a workout id that doesn't exist", async () => {
+    const res = await request(app)
+      .delete(`/workouts/999999/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Workout not found' });
+  });
+
+  it("returns the same 404 as a missing workout for another user's workout, and deletes nothing", async () => {
+    const before = await setIdsOf(workout.id);
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(intruder.id));
+
+    // Same body as a missing id, so an intruder can't tell the workout exists.
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Workout not found' });
+    expect(await setIdsOf(workout.id)).toEqual(before);
+  });
+
+  it('returns 401 without a token', async () => {
+    const res = await request(app).delete(`/workouts/${workout.id}/exercises/${squatId}`);
+
+    expect(res.status).toBe(401);
+    expect(await setIdsOf(workout.id)).toHaveLength(5);
+  });
+
+  it.each(INVALID_IDS)('returns 400 for workout id %s', async (id) => {
+    const res = await request(app)
+      .delete(`/workouts/${id}/exercises/${squatId}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(INVALID_IDS)('returns 400 for exercise id %s', async (id) => {
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/exercises/${id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+  });
+});
