@@ -1,12 +1,11 @@
 import type { WorkoutDetail } from '@shared/models';
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, SectionList, StyleSheet, View } from 'react-native';
+import { Pressable, SectionList, StyleSheet, View } from 'react-native';
 
-import { errorMessage } from '@/api/error-message';
 import { useAuth } from '@/auth/auth-provider';
-import { Button } from '@/components/button';
-import { HeaderButton } from '@/components/header-button';
+import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
+import { TextButton } from '@/components/text-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -37,9 +36,9 @@ export default function HistoryScreen() {
           The home screen has no back button, so its left side is free for logging out. */}
       <Stack.Screen
         options={{
-          headerLeft: () => <HeaderButton label="Log out" onPress={() => void logout()} />,
+          headerLeft: () => <TextButton label="Log out" onPress={() => void logout()} />,
           headerRight: () => (
-            <HeaderButton
+            <TextButton
               label="+ Log workout"
               accessibilityLabel="Log workout"
               onPress={() => router.push('/workouts/new')}
@@ -50,21 +49,13 @@ export default function HistoryScreen() {
       {workouts.data === undefined ? (
         // No data yet: either the first load is running or it failed.
         workouts.isError ? (
-          <View style={styles.centered}>
-            <ThemedText themeColor="danger" accessibilityRole="alert" style={styles.centeredText}>
-              {errorMessage(workouts.error)}
-            </ThemedText>
-            <Button
-              label="Try again"
-              variant="secondary"
-              loading={workouts.isFetching}
-              onPress={() => void workouts.refetch()}
-            />
-          </View>
+          <ErrorState
+            error={workouts.error}
+            retrying={workouts.isFetching}
+            onRetry={() => void workouts.refetch()}
+          />
         ) : (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" accessibilityLabel="Loading workouts" />
-          </View>
+          <LoadingState label="Loading workouts" />
         )
       ) : (
         // Once there's data it stays on screen, even if a later refetch fails.
@@ -141,25 +132,16 @@ function Separator() {
 
 function EmptyState() {
   return (
-    <View style={styles.centered}>
-      <ThemedText>No workouts yet</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={styles.centeredText}>
+    <MessageState title="No workouts yet">
+      <ThemedText type="small" themeColor="textSecondary">
         Tap + Log workout to add your first one.
       </ThemedText>
-    </View>
+    </MessageState>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.three,
-    padding: Spacing.four,
-  },
-  centeredText: { textAlign: 'center' },
   // Lets the empty state fill the screen, so it can be centered.
   emptyContent: { flexGrow: 1 },
   sectionHeader: {

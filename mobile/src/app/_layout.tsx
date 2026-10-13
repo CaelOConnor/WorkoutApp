@@ -32,6 +32,16 @@ export default function RootLayout() {
   );
 }
 
+// Screens shown as a sheet that slides up over the current screen: a native iOS form sheet, and
+// a bottom sheet on Android. 'fitToContents' sizes it to its content. Android draws no header
+// inside a sheet, so it's hidden on both and the screen draws its own title (components/sheet.tsx).
+const SHEET_OPTIONS = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: 'fitToContents',
+  sheetGrabberVisible: true,
+  headerShown: false,
+} as const;
+
 // A separate component so it can call useAuth(): RootLayout itself is outside AuthProvider.
 //
 // Stack.Protected: a screen is only reachable while its guard is true. When a guard turns false
@@ -50,7 +60,9 @@ function RootNavigator() {
         {/* Every signed-in screen must be listed here: a route left out of all the
             Stack.Protected groups would be reachable while signed out. */}
         <Stack.Screen name="workouts/new" options={{ title: 'Log workout' }} />
-        <Stack.Screen name="workouts/[id]" options={{ title: 'Workout' }} />
+        <Stack.Screen name="workouts/[id]/index" options={{ title: 'Workout' }} />
+        <Stack.Screen name="workouts/[id]/sets/[setId]" options={SHEET_OPTIONS} />
+        <Stack.Screen name="workouts/[id]/edit" options={SHEET_OPTIONS} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ title: 'Log in' }} />

@@ -8,14 +8,16 @@ export interface ButtonProps {
   onPress: () => void;
   // Shows a spinner and ignores presses, e.g. while a request is in flight.
   loading?: boolean;
-  // 'primary' is filled, for the main action on a screen; 'secondary' is outlined.
-  variant?: 'primary' | 'secondary';
+  // 'primary' is filled, for the main action on a screen; 'secondary' is outlined; 'danger' is
+  // outlined in red, for deleting.
+  variant?: 'primary' | 'secondary' | 'danger';
 }
 
 export function Button({ label, onPress, loading = false, variant = 'primary' }: ButtonProps) {
   const theme = useTheme();
   const primary = variant === 'primary';
-  const textColor = primary ? theme.background : theme.text;
+  const outlineColor = variant === 'danger' ? theme.danger : theme.textSecondary;
+  const textColor = primary ? theme.background : variant === 'danger' ? theme.danger : theme.text;
 
   return (
     <Pressable
@@ -31,7 +33,7 @@ export function Button({ label, onPress, loading = false, variant = 'primary' }:
         styles.button,
         primary
           ? { backgroundColor: theme.text }
-          : { borderColor: theme.textSecondary, borderWidth: StyleSheet.hairlineWidth },
+          : { borderColor: outlineColor, borderWidth: StyleSheet.hairlineWidth },
         (pressed || loading) && styles.dimmed,
       ]}>
       {loading ? <ActivityIndicator color={textColor} /> : null}

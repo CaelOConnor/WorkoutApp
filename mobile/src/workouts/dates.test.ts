@@ -1,4 +1,4 @@
-import { addDays, formatWorkoutDate, groupByWeek, localDateString, startOfWeek } from './dates';
+import { addDays, formatFullDate, formatWorkoutDate, groupByWeek, localDateString, startOfWeek } from './dates';
 
 // groupByWeek only reads `date`, so test items can be this small (see the generic in dates.ts).
 function w(id: number, date: string) {
@@ -45,6 +45,13 @@ describe('formatWorkoutDate', () => {
   it('shows weekday, month and day', () => {
     expect(formatWorkoutDate('2026-10-12')).toBe('Mon, Oct 12');
     expect(formatWorkoutDate('2026-10-18')).toBe('Sun, Oct 18');
+  });
+});
+
+describe('formatFullDate', () => {
+  it('shows weekday, month, day and year', () => {
+    expect(formatFullDate('2026-10-14')).toBe('Wed, Oct 14, 2026');
+    expect(formatFullDate('2025-01-05')).toBe('Sun, Jan 5, 2025');
   });
 });
 

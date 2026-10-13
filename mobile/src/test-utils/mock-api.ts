@@ -15,6 +15,12 @@ export function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+// 204 No Content, as the API's DELETE routes send. A 204 can't have a body, so jsonResponse
+// (which always sends one) can't make it.
+export function noContentResponse(): Response {
+  return new Response(null, { status: 204 });
+}
+
 // What a route handler receives: the parsed JSON body and the request headers.
 export interface MockRequest {
   body: unknown;

@@ -52,6 +52,22 @@ export function formatWorkoutDate(date: string): string {
   return `${WEEKDAYS[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
+// 'Wed, Oct 14, 2026', for a heading where the year should always show.
+export function formatFullDate(date: string): string {
+  return `${formatWorkoutDate(date)}, ${date.slice(0, 4)}`;
+}
+
+// True for 'YYYY-MM-DD' naming a real day, the same rule as the backend's isDateString: a round
+// trip through a UTC date comes back unchanged only if the day exists ('2026-02-30' rolls over
+// to March 2). Postgres has no year 0, so '0000-...' is out too.
+export function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) {
+    return false;
+  }
+  const dayNumber = toDayNumber(value);
+  return !Number.isNaN(dayNumber) && toDateString(fromDayNumber(dayNumber)) === value;
+}
+
 // 'Oct 5', or 'Oct 5, 2025' when it isn't in `currentYear`.
 function formatShortDate(date: string, currentYear: number): string {
   const d = fromDayNumber(toDayNumber(date));
