@@ -98,6 +98,7 @@ describe('when signed out', () => {
   it('reaches the home screen after a successful login', async () => {
     mockApi({
       'POST /auth/login': () => jsonResponse(200, { token: 'tok-new', email: EMAIL }),
+      'GET /workouts': () => jsonResponse(200, []),
     });
     const app = await renderApp();
     await screen.findByRole('button', { name: /log in/i });
@@ -126,6 +127,7 @@ describe('when signed out', () => {
     mockApi({
       'POST /auth/signup': () => jsonResponse(201, { id: 7, email: EMAIL }),
       'POST /auth/login': () => jsonResponse(200, { token: 'tok-new', email: EMAIL }),
+      'GET /workouts': () => jsonResponse(200, []),
     });
     const app = await renderApp();
 
@@ -141,6 +143,8 @@ describe('when signed out', () => {
 describe('when signed in', () => {
   beforeEach(async () => {
     await SecureStore.setItemAsync(TOKEN_KEY, 'tok-saved');
+    // The home screen loads the workout history.
+    mockApi({ 'GET /workouts': () => jsonResponse(200, []) });
   });
 
   it('opens on the home screen', async () => {

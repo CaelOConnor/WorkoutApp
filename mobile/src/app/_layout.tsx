@@ -47,6 +47,10 @@ function RootNavigator() {
     <Stack>
       <Stack.Protected guard={signedIn}>
         <Stack.Screen name="index" options={{ title: 'Workouts' }} />
+        {/* Every signed-in screen must be listed here: a route left out of all the
+            Stack.Protected groups would be reachable while signed out. */}
+        <Stack.Screen name="workouts/new" options={{ title: 'Log workout' }} />
+        <Stack.Screen name="workouts/[id]" options={{ title: 'Workout' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ title: 'Log in' }} />
