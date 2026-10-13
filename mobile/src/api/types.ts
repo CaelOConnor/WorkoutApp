@@ -9,6 +9,7 @@
 // shouldn't break an older app.
 
 import type {
+  CreateWorkoutResponse,
   ErrorResponse,
   Exercise,
   LoginResponse,
@@ -126,6 +127,11 @@ export function isWorkoutDetail(value: unknown): value is WorkoutDetail {
 
 // GET /workouts
 export const isWorkoutDetailList = isListOf(isWorkoutDetail);
+
+// POST /workouts (201): just the new workout's id.
+export function isCreateWorkoutResponse(value: unknown): value is CreateWorkoutResponse {
+  return isRecord(value) && isPositiveInteger(value.id);
+}
 
 // The body of every 4xx/5xx the API itself sends.
 export function isErrorResponse(value: unknown): value is ErrorResponse {

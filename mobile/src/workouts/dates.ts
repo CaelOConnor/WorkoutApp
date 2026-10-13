@@ -45,6 +45,15 @@ export function localDateString(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+// The Date a native date picker should show for 'YYYY-MM-DD': noon local time on that day.
+// Pickers work in local time, so this is the other place local time is right. Noon rather than
+// midnight: on a daylight-saving day, midnight can be skipped or repeated, and an hour's shift
+// would then land on the day before. localDateString() turns the picked Date back into a string.
+export function localNoon(date: string): Date {
+  const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
 // 'Mon, Oct 12'. Month names are spelled out here rather than with toLocaleDateString, which
 // depends on the JS engine's Intl data and so can differ between Hermes, Node and devices.
 export function formatWorkoutDate(date: string): string {

@@ -12,6 +12,7 @@ import * as SecureStore from 'expo-secure-store';
 import { Alert, type AlertButton } from 'react-native';
 
 import { TOKEN_KEY } from '@/auth/token-storage';
+import { recordAlerts } from '@/test-utils/alerts';
 import { doubleTap } from '@/test-utils/double-tap';
 import {
   jsonResponse,
@@ -142,22 +143,6 @@ function answerAlerts(...answers: string[]) {
   return jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
     buttons?.find((b) => b.text !== undefined && answers.includes(b.text))?.onPress?.();
   });
-}
-
-// Records each Alert.alert without answering it, like a dialog the user hasn't tapped yet.
-// answer('Delete') presses that button on the oldest open dialog.
-function recordAlerts() {
-  const open: AlertButton[][] = [];
-  const spy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
-    open.push(buttons ?? []);
-  });
-  return {
-    spy,
-    async answer(text: string) {
-      const buttons = open.shift();
-      await act(async () => buttons?.find((b) => b.text === text)?.onPress?.());
-    },
-  };
 }
 
 beforeEach(async () => {

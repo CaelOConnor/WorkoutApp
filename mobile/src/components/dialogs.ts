@@ -33,10 +33,11 @@ export function ask(
 export async function confirm(
   title: string,
   message: string | undefined,
-  confirmText: string
+  confirmText: string,
+  cancelText = 'Cancel'
 ): Promise<boolean> {
   const answer = await ask(title, message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: cancelText, style: 'cancel' },
     { text: confirmText, style: 'destructive' },
   ]);
   return answer === confirmText;

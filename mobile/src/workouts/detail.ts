@@ -34,8 +34,9 @@ export function formatWeight(weight: string): string {
 }
 
 // 'Set 1 · 5 reps × 225 lb'. `index` is the set's position within its exercise (0-based), which
-// is what the user sees as the set number. The stored set_number has gaps after deletes and runs
-// across all exercises in the workout, so it would read oddly (Squat: Set 1, Set 3, Set 5).
+// is what the user sees as the set number. The stored set_number can't be shown as is: it has
+// gaps after deletes, and its scheme depends on how the set was added (1..n per exercise when a
+// workout is logged, but the workout's highest + 1 for "+ Add set"; see ROADMAP.md).
 export function formatSetLine(set: WorkoutDetailSet, index: number): string {
   const reps = `${set.reps} ${set.reps === 1 ? 'rep' : 'reps'}`;
   return `Set ${index + 1} · ${reps} × ${formatWeight(set.weight)} ${set.unit}`;

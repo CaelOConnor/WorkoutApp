@@ -43,17 +43,41 @@ export function setFormFrom(set: WorkoutDetailSet): SetForm {
   return { reps: String(set.reps), weight: formatWeight(set.weight), unit: set.unit };
 }
 
-export function parseSetForm(form: SetForm): FormResult<SetValues> {
-  const repsText = form.reps.trim();
-  const reps = Number(repsText);
-  if (!/^\d+$/.test(repsText) || reps > MAX_REPS) {
-    return { ok: false, error: 'Reps must be a whole number.' };
-  }
+const REPS_ERROR = 'Reps must be a whole number.';
+const WEIGHT_ERROR = 'Weight must be a number up to 9999.99, with at most 2 decimals.';
+
+// Text -> number, or null if the text isn't valid. Kept private: callers use the error or parse
+// functions below, so the rule and its message can't drift apart.
+function parseReps(text: string): number | null {
+  const trimmed = text.trim();
+  const reps = Number(trimmed);
+  return /^\d+$/.test(trimmed) && reps <= MAX_REPS ? reps : null;
+}
+
+function parseWeight(text: string): number | null {
   // Some keyboards (e.g. in Europe) type a comma as the decimal point.
-  const weightText = form.weight.trim().replace(',', '.');
-  const weight = Number(weightText);
-  if (!WEIGHT_PATTERN.test(weightText) || weight > MAX_WEIGHT) {
-    return { ok: false, error: 'Weight must be a number up to 9999.99, with at most 2 decimals.' };
+  const normalized = text.trim().replace(',', '.');
+  const weight = Number(normalized);
+  return WEIGHT_PATTERN.test(normalized) && weight <= MAX_WEIGHT ? weight : null;
+}
+
+// One field's error message, or null if it's valid: for showing next to that field.
+export function repsError(text: string): string | null {
+  return parseReps(text) === null ? REPS_ERROR : null;
+}
+
+export function weightError(text: string): string | null {
+  return parseWeight(text) === null ? WEIGHT_ERROR : null;
+}
+
+export function parseSetForm(form: SetForm): FormResult<SetValues> {
+  const reps = parseReps(form.reps);
+  if (reps === null) {
+    return { ok: false, error: REPS_ERROR };
+  }
+  const weight = parseWeight(form.weight);
+  if (weight === null) {
+    return { ok: false, error: WEIGHT_ERROR };
   }
   return { ok: true, value: { reps, weight, unit: form.unit } };
 }
@@ -80,11 +104,13 @@ export function workoutFormFrom(workout: Pick<WorkoutDetail, 'date' | 'notes'>):
   return { date: workout.date, notes: workout.notes ?? '' };
 }
 
+export const DATE_ERROR = 'Enter a real date as YYYY-MM-DD.';
+
 // Both fields are always sent. Empty notes become null, which clears them (see UpdateWorkoutBody).
 export function parseWorkoutForm(form: WorkoutForm): FormResult<UpdateWorkoutBody> {
   const date = form.date.trim();
   if (!isCalendarDate(date)) {
-    return { ok: false, error: 'Enter a real date as YYYY-MM-DD.' };
+    return { ok: false, error: DATE_ERROR };
   }
   const notes = form.notes.trim();
   return { ok: true, value: { date, notes: notes === '' ? null : notes } };

@@ -7,6 +7,7 @@ import type {
 } from '@shared/models';
 
 import {
+  isCreateWorkoutResponse,
   isErrorResponse,
   isExerciseList,
   isLoginResponse,
@@ -159,5 +160,15 @@ describe('isNoContent', () => {
 
   it('rejects a body', () => {
     expect(isNoContent({})).toBe(false);
+  });
+});
+
+describe('isCreateWorkoutResponse', () => {
+  it('accepts the new id', () => {
+    expect(isCreateWorkoutResponse({ id: 7 })).toBe(true);
+  });
+
+  it.each([null, {}, { id: '7' }, { id: 0 }, { id: 1.5 }, [{ id: 7 }]])('rejects %p', (value) => {
+    expect(isCreateWorkoutResponse(value)).toBe(false);
   });
 });

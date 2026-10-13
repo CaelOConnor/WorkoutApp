@@ -1,4 +1,12 @@
-import { addDays, formatFullDate, formatWorkoutDate, groupByWeek, localDateString, startOfWeek } from './dates';
+import {
+  addDays,
+  formatFullDate,
+  formatWorkoutDate,
+  groupByWeek,
+  localDateString,
+  localNoon,
+  startOfWeek,
+} from './dates';
 
 // groupByWeek only reads `date`, so test items can be this small (see the generic in dates.ts).
 function w(id: number, date: string) {
@@ -38,6 +46,12 @@ describe('localDateString', () => {
   it("formats a Date as the device's local calendar day", () => {
     // new Date(y, monthIndex, d, h) is local time, so this is 23:30 on 5 March wherever the test runs.
     expect(localDateString(new Date(2026, 2, 5, 23, 30))).toBe('2026-03-05');
+  });
+
+  // Jest runs in America/Los_Angeles (jest.global-setup.js). 05:30 UTC on the 14th is 22:30 on
+  // the 13th there, so a version that read the UTC date (e.g. toISOString) would say the 14th.
+  it('is the local day, not the UTC day, late in the evening', () => {
+    expect(localDateString(new Date('2026-10-14T05:30:00Z'))).toBe('2026-10-13');
   });
 });
 
@@ -142,5 +156,23 @@ describe('time zones', () => {
     expect(groupByWeek([w(1, '2026-10-12')], '2026-10-14')).toEqual([
       { title: 'This week', weekStart: '2026-10-12', data: [w(1, '2026-10-12')] },
     ]);
+  });
+});
+
+// For the native date picker, which works with Date objects in local time.
+describe('localNoon', () => {
+  it('is noon local time on that day, and reads back as the same day', () => {
+    const date = localNoon('2026-10-13');
+
+    expect([date.getFullYear(), date.getMonth(), date.getDate(), date.getHours()]).toEqual([2026, 9, 13, 12]);
+    expect(localDateString(date)).toBe('2026-10-13');
+  });
+
+  // Noon, not midnight: on a daylight-saving day, local midnight can be skipped or repeated, and a
+  // picker that shifts by an hour would then land on the day before.
+  it('round-trips across daylight-saving changes', () => {
+    for (const day of ['2026-03-08', '2026-11-01']) {
+      expect(localDateString(localNoon(day))).toBe(day);
+    }
   });
 });

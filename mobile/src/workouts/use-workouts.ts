@@ -1,7 +1,12 @@
-import type { AddSetBody, UpdateWorkoutBody } from '@shared/models';
+import type { AddSetBody, CreateWorkoutBody, UpdateWorkoutBody } from '@shared/models';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { isNoContent, isWorkoutDetail, isWorkoutDetailList } from '@/api/types';
+import {
+  isCreateWorkoutResponse,
+  isNoContent,
+  isWorkoutDetail,
+  isWorkoutDetailList,
+} from '@/api/types';
 import { useApi } from '@/auth/auth-provider';
 
 import type { SetValues } from './forms';
@@ -35,6 +40,21 @@ export function useWorkout(id: number | null) {
     queryKey: workoutQueryKey(id ?? -1),
     queryFn: () => api.request(`/workouts/${id}`, { guard: isWorkoutDetail }),
     enabled: id !== null,
+  });
+}
+
+// Saves a new workout with all its sets (POST /workouts) and resolves with its id.
+export function useCreateWorkout() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateWorkoutBody) =>
+      api.request('/workouts', { method: 'POST', body, guard: isCreateWorkoutResponse }),
+    // Not awaited: the log screen moves on to the new workout straight away, and the history
+    // refetches in the background so it's up to date when the user goes back to it.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: WORKOUTS_QUERY_KEY });
+    },
   });
 }
 

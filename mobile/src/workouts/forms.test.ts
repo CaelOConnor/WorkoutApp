@@ -4,7 +4,9 @@ import {
   addSetBodyFrom,
   parseSetForm,
   parseWorkoutForm,
+  repsError,
   setFormFrom,
+  weightError,
   workoutFormFrom,
 } from './forms';
 
@@ -125,5 +127,20 @@ describe('parseWorkoutForm', () => {
   it('accepts a leap day only in a leap year', () => {
     expect(parseWorkoutForm({ date: '2024-02-29', notes: '' })).toMatchObject({ ok: true });
     expect(parseWorkoutForm({ date: '2026-02-29', notes: '' })).toMatchObject({ ok: false });
+  });
+});
+
+// The per-field checks behind parseSetForm, for showing an error next to each field.
+describe('repsError and weightError', () => {
+  it('are null for valid values', () => {
+    expect(repsError('5')).toBeNull();
+    expect(weightError('102,5')).toBeNull();
+  });
+
+  it('give the same messages as parseSetForm', () => {
+    expect(repsError('')).toBe('Reps must be a whole number.');
+    expect(weightError('1.234')).toBe(
+      'Weight must be a number up to 9999.99, with at most 2 decimals.'
+    );
   });
 });
