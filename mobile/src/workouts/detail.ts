@@ -42,6 +42,16 @@ export function formatSetLine(set: WorkoutDetailSet, index: number): string {
   return `Set ${index + 1} · ${reps} × ${formatWeight(set.weight)} ${set.unit}`;
 }
 
+// The set that's in `after` but not in `before`: the one a POST .../sets just added. Compared by
+// id rather than position, since the server sorts sets by set_number.
+export function addedSet(
+  before: readonly WorkoutDetailSet[],
+  after: readonly WorkoutDetailSet[]
+): WorkoutDetailSet | undefined {
+  const oldIds = new Set(before.map((s) => s.id));
+  return after.find((s) => !oldIds.has(s.id));
+}
+
 // The largest id a Postgres INTEGER (SERIAL) can hold.
 const MAX_ID = 2_147_483_647;
 

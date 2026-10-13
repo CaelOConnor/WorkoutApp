@@ -2,6 +2,7 @@
 // signed in, with a fake backend that remembers changes.
 import type {
   AddSetBody,
+  Exercise,
   UpdateWorkoutBody,
   WorkoutDetail,
   WorkoutDetailSet,
@@ -27,6 +28,13 @@ jest.mock('expo-secure-store');
 
 const SQUAT = { exercise_id: 1, exercise_name: 'Squat' };
 const BENCH = { exercise_id: 2, exercise_name: 'Bench Press' };
+
+// GET /exercises: the two in the workout, plus one that isn't.
+const EXERCISES: Exercise[] = [
+  { id: 1, name: 'Squat', muscle_group: 'Legs', created_by: null },
+  { id: 2, name: 'Bench Press', muscle_group: 'Chest', created_by: null },
+  { id: 3, name: 'Deadlift', muscle_group: 'Back', created_by: null },
+];
 
 // Squat, Squat, Bench. Bench's stored set_number is 3, but it's shown as its card's "Set 1".
 function initialWorkout(): WorkoutDetail {
@@ -82,6 +90,7 @@ function fakeServer() {
   const routes: MockRoutes = {
     'GET /workouts': () => jsonResponse(200, state.workout ? [state.workout] : []),
     'GET /workouts/3': () => (state.workout ? jsonResponse(200, state.workout) : notFound()),
+    'GET /exercises': () => jsonResponse(200, EXERCISES),
     'PATCH /workouts/3': write(({ body }) => {
       state.bodies.push(body);
       // `as` (a type assertion, not a check): the fake trusts the app's bodies, and the tests
@@ -98,7 +107,7 @@ function fakeServer() {
       const { exercise_id, reps, weight, unit } = body as AddSetBody;
       if (!state.workout) return notFound();
       save((w) => {
-        const name = w.sets.find((s) => s.exercise_id === exercise_id)?.exercise_name ?? '?';
+        const name = EXERCISES.find((e) => e.id === exercise_id)?.name ?? '?';
         const added: WorkoutDetailSet = {
           id: 99,
           exercise_id,
@@ -117,7 +126,8 @@ function fakeServer() {
       save((w) => ({ ...w, sets: w.sets.filter((s) => s.exercise_id !== 1) }))
     ),
   };
-  for (const id of [31, 32, 33]) {
+  // 99 is the id POST /workouts/3/sets gives a new set.
+  for (const id of [31, 32, 33, 99]) {
     routes[`PATCH /workouts/3/sets/${id}`] = write(({ body }) => {
       state.bodies.push(body);
       const { reps, weight, unit } = body as { reps: number; weight: number; unit: 'lb' | 'kg' };
@@ -432,5 +442,58 @@ describe('double-tapping', () => {
     expect(await screen.findByText('No workouts yet')).toBeOnTheScreen();
     expect(app.getPathname()).toBe('/');
     expect(count(fetchMock, 'DELETE /workouts/3')).toBe(1);
+  });
+});
+
+describe('+ Add exercise', () => {
+  // The picker is a Modal. On iOS (Jest's platform) the screen waits for the Modal's onDismiss,
+  // which native code calls once the slide-away animation has finished, before it opens the next
+  // sheet: iOS can't present a screen while another is still being dismissed. Jest has no native
+  // side, and its Modal mock renders nothing once hidden, so this grabs the open picker first and
+  // then, after `close` has hidden it, calls its onDismiss itself, as native code would.
+  async function closePicker(close: () => Promise<void>) {
+    const picker = screen.getByTestId('exercise-picker');
+    await close();
+    // `unknown`, then narrowed: element props aren't typed, and calling an unchecked value
+    // would be an `any` in disguise.
+    const onDismiss: unknown = picker.props.onDismiss;
+    if (typeof onDismiss !== 'function') {
+      throw new Error('The picker has no onDismiss');
+    }
+    await act(async () => onDismiss());
+  }
+
+  it("offers only exercises not in the workout, adds the first set, and opens it to fill in", async () => {
+    const { state } = fakeServer();
+    const app = await renderApp('/workouts/3');
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Add exercise' }));
+    const deadlift = await screen.findByRole('button', { name: 'Deadlift' });
+    expect(screen.queryByRole('button', { name: 'Squat' })).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Bench Press' })).not.toBeOnTheScreen();
+    await closePicker(() => fireEvent.press(deadlift));
+
+    // The first set is saved straight away, then its sheet opens for the real numbers.
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/sets/99'));
+    expect(state.bodies).toEqual([{ exercise_id: 3, reps: 0, weight: 0, unit: 'lb' }]);
+    expect(await screen.findByText('Deadlift · Set 1')).toBeOnTheScreen();
+    await fireEvent.changeText(screen.getByLabelText('Reps'), '5');
+    await fireEvent.changeText(screen.getByLabelText('Weight'), '315');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
+    expect(within(await screen.findByTestId('Deadlift card')).getByText('Set 1 · 5 reps × 315 lb')).toBeOnTheScreen();
+  });
+
+  it('adds nothing when the picker is cancelled', async () => {
+    const { state } = fakeServer();
+    const app = await renderApp('/workouts/3');
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Add exercise' }));
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    await closePicker(() => fireEvent.press(cancel));
+
+    expect(state.bodies).toEqual([]);
+    expect(app.getPathname()).toBe('/workouts/3');
   });
 });

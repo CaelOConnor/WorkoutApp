@@ -1,6 +1,6 @@
 import type { Exercise } from '@shared/models';
-import { useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
@@ -20,20 +20,40 @@ export interface ExercisePickerProps {
   onPick: (exercise: Exercise) => void;
   // Exercises not to offer, e.g. the ones already in the workout.
   excludeIds?: readonly number[];
+  // Called once the picker has finished closing. Open another screen (e.g. a sheet) from here,
+  // not from onPick: iOS can't present a screen while the picker is still sliding away.
+  onClosed?: () => void;
 }
 
 // Choose one exercise from GET /exercises, with a search box. Self-contained (it loads its own
 // data) and shown in a Modal, so any screen can use it: logging a new workout now, and adding an
 // exercise to an existing one later.
-export function ExercisePicker({ visible, onClose, onPick, excludeIds = [] }: ExercisePickerProps) {
+export function ExercisePicker({
+  visible,
+  onClose,
+  onPick,
+  excludeIds = [],
+  onClosed,
+}: ExercisePickerProps) {
+  // Android has no "dismissed" event, and doesn't need one: it can open a screen while a Modal
+  // closes. So there, the picker counts as closed as soon as it's hidden.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' && !visible) {
+      onClosed?.();
+    }
+  }, [visible, onClosed]);
+
   return (
     <Modal
+      testID="exercise-picker"
       visible={visible}
       animationType="slide"
       // iOS: a card over the screen that can be swiped down. Android: full screen.
       presentationStyle="pageSheet"
       // Android's back button, and the iOS swipe-down.
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+      // iOS only: native code calls this when the slide-away animation has finished.
+      onDismiss={onClosed}>
       {/* A Modal is a separate native window, so it needs its own provider for safe-area
           insets (e.g. the status bar on Android). */}
       <SafeAreaProvider>
@@ -46,8 +66,9 @@ export function ExercisePicker({ visible, onClose, onPick, excludeIds = [] }: Ex
   );
 }
 
-// Required<Omit<...>>: the picker's props without `visible`, with excludeIds no longer optional.
-type PickerContentProps = Required<Omit<ExercisePickerProps, 'visible'>>;
+// Required<Omit<...>>: the picker's props without `visible` and `onClosed` (the Modal handles
+// those), with excludeIds no longer optional.
+type PickerContentProps = Required<Omit<ExercisePickerProps, 'visible' | 'onClosed'>>;
 
 function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
   const theme = useTheme();

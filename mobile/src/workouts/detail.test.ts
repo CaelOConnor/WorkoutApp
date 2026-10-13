@@ -1,6 +1,12 @@
 import type { WorkoutDetailSet } from '@shared/models';
 
-import { formatSetLine, formatWeight, groupSetsByExercise, parseRouteId } from './detail';
+import {
+  addedSet,
+  formatSetLine,
+  formatWeight,
+  groupSetsByExercise,
+  parseRouteId,
+} from './detail';
 
 // A full set with sensible defaults; `overrides` replaces only the fields a test cares about.
 function set(overrides: Partial<WorkoutDetailSet>): WorkoutDetailSet {
@@ -85,4 +91,17 @@ describe('parseRouteId', () => {
       expect(parseRouteId(value)).toBeNull();
     }
   );
+});
+
+describe('addedSet', () => {
+  it('finds the set that is in the new list but not the old one', () => {
+    const before = [set({ id: 1 }), set({ id: 2 })];
+    const after = [set({ id: 1 }), set({ id: 5, exercise_id: 3 }), set({ id: 2 })];
+
+    expect(addedSet(before, after)?.id).toBe(5);
+  });
+
+  it('is undefined when nothing was added', () => {
+    expect(addedSet([set({ id: 1 })], [set({ id: 1 })])).toBeUndefined();
+  });
 });

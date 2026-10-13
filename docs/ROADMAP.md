@@ -32,7 +32,7 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 
 ## Phase 3: App screens
 - [ ] Log today's workout; history list grouped by week; workout detail with edit/delete.
-- [ ] Add a new exercise to an existing workout from the detail screen (today only "+ Add set" on exercises already in it). Reuse the exercise picker from step 5c, then `POST /workouts/:id/sets` with the chosen `exercise_id`.
+- [x] Add a new exercise to an existing workout: "+ Add exercise" on the detail screen opens `ExercisePicker` (exercises already in the workout hidden). Once the picker has closed (iOS: `Modal.onDismiss`, since iOS can't present the next sheet mid-dismissal), `POST /workouts/:id/sets` adds a 0 reps × 0 first set and its edit sheet opens to fill in. Cancelling that sheet leaves the 0 × 0 set, which can be deleted like any other.
 - [x] Groundwork: real API URL (`mobile/src/api/config.ts`), login screen, token storage (Expo SecureStore), template screens replaced.
 - [x] API layer (`mobile/src/api/`): `request<T>` with a required response guard, `ApiError` / `NetworkError` / `InvalidResponseError`, 10 s timeout, `onUnauthorized` on 401 (not for `/auth/login`). Shared types via the `@shared/models` path alias, type-only. Jest (`jest-expo`) set up.
 - [x] Auth state (`mobile/src/auth/`): `AuthProvider` with `status` (`loading` / `signedOut` / `signedIn`), token in SecureStore, `login`, `signup` (then logs in), `logout` (also clears the TanStack Query cache), logout on any 401. Splash screen stays up until the saved token is read. TanStack Query in the root layout, refetching on return to the foreground; retries only network errors and 5xx.

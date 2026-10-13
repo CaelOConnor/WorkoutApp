@@ -2,6 +2,7 @@ import type { WorkoutDetailSet } from '@shared/models';
 
 import {
   addSetBodyFrom,
+  firstSetBody,
   parseSetForm,
   parseWorkoutForm,
   repsError,
@@ -142,5 +143,17 @@ describe('repsError and weightError', () => {
     expect(weightError('1.234')).toBe(
       'Weight must be a number up to 9999.99, with at most 2 decimals.'
     );
+  });
+});
+
+describe('firstSetBody', () => {
+  it("starts a new exercise at 0 reps × 0 (to fill in next), in the workout's last unit", () => {
+    const sets = [set({ unit: 'lb' }), set({ unit: 'kg' })];
+
+    expect(firstSetBody(7, sets)).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'kg' });
+  });
+
+  it('uses lb in a workout with no sets', () => {
+    expect(firstSetBody(7, [])).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'lb' });
   });
 });

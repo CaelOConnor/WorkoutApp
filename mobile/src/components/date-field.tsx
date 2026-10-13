@@ -1,6 +1,9 @@
+// DateField for Android (and any platform without its own file). iOS uses date-field.ios.tsx,
+// which Metro picks instead of this file there; TypeScript only sees this one, so its props type
+// is the one both share.
 import { DateTimePicker } from '@expo/ui/community/datetime-picker';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -17,10 +20,11 @@ export interface DateFieldProps {
 // The picker works with Date objects in local time; the form works with 'YYYY-MM-DD' strings.
 // localNoon and localDateString convert between them, both in the phone's own time zone, which
 // is the zone the user means when they pick "Tuesday".
+// Here: a button showing the date, which opens the picker as a dialog.
 export function DateField({ label, value, onChange }: DateFieldProps) {
   const theme = useTheme();
-  // Android shows the picker as a dialog that opens when it mounts, so it's only rendered while
-  // open, and closes by unmounting.
+  // The picker opens as a dialog when it mounts, so it's only rendered while open, and closes by
+  // unmounting.
   const [open, setOpen] = useState(false);
 
   return (
@@ -28,46 +32,40 @@ export function DateField({ label, value, onChange }: DateFieldProps) {
       <ThemedText type="small" themeColor="textSecondary">
         {label}
       </ThemedText>
-      {Platform.OS === 'ios' ? (
-        // iOS: a compact button that shows the date and opens a calendar popover.
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${formatFullDate(value)}`}
+        accessibilityHint="Opens a calendar"
+        onPress={() => setOpen(true)}
+        style={[styles.button, { backgroundColor: theme.backgroundElement }]}>
+        <ThemedText numberOfLines={1}>{formatFullDate(value)}</ThemedText>
+      </Pressable>
+      {open ? (
         <DateTimePicker
-          testID="date-picker"
           value={localNoon(value)}
           mode="date"
-          display="compact"
-          onValueChange={(_event, date) => onChange(localDateString(date))}
+          presentation="dialog"
+          onValueChange={(_event, date) => {
+            setOpen(false);
+            onChange(localDateString(date));
+          }}
+          onDismiss={() => setOpen(false)}
         />
-      ) : (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${label}, ${formatFullDate(value)}`}
-            accessibilityHint="Opens a calendar"
-            onPress={() => setOpen(true)}
-            style={[styles.button, { backgroundColor: theme.backgroundElement }]}>
-            <ThemedText>{formatFullDate(value)}</ThemedText>
-          </Pressable>
-          {open ? (
-            <DateTimePicker
-              value={localNoon(value)}
-              mode="date"
-              presentation="dialog"
-              onValueChange={(_event, date) => {
-                setOpen(false);
-                onChange(localDateString(date));
-              }}
-              onDismiss={() => setOpen(false)}
-            />
-          ) : null}
-        </>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  // Can shrink (with the date cut short) rather than push past the screen edge.
   button: {
+    flexShrink: 1,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,

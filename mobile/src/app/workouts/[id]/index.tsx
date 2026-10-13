@@ -1,11 +1,13 @@
-import type { WorkoutDetail } from '@shared/models';
+import type { Exercise, WorkoutDetail } from '@shared/models';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { errorMessage } from '@/api/error-message';
 import { Button } from '@/components/button';
 import { ask, confirm } from '@/components/dialogs';
+import { ExercisePicker } from '@/components/exercise-picker';
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
 import { TextButton } from '@/components/text-button';
 import { ThemedText } from '@/components/themed-text';
@@ -14,8 +16,14 @@ import { Spacing } from '@/constants/theme';
 import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
 import { formatFullDate } from '@/workouts/dates';
-import { formatSetLine, groupSetsByExercise, parseRouteId, type ExerciseGroup } from '@/workouts/detail';
-import { addSetBodyFrom } from '@/workouts/forms';
+import {
+  addedSet,
+  formatSetLine,
+  groupSetsByExercise,
+  parseRouteId,
+  type ExerciseGroup,
+} from '@/workouts/detail';
+import { addSetBodyFrom, firstSetBody } from '@/workouts/forms';
 import { setCountLabel } from '@/workouts/summary';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
 
@@ -101,6 +109,32 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
       );
       if (sure) {
         await removeExercise.mutateAsync(group.exerciseId);
+      }
+    });
+  }
+
+  // "+ Add exercise": the picker, then (once it has closed) the exercise's first set is saved and
+  // its sheet opens to fill in the numbers. The chosen exercise waits in a ref between the two:
+  // it's only read in an event handler, so it doesn't need to trigger a render like state would.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const picked = useRef<Exercise | null>(null);
+
+  function addExerciseFlow() {
+    const exercise = picked.current;
+    picked.current = null;
+    if (!exercise) {
+      return; // the picker was cancelled
+    }
+    change('Could not add exercise', async (leave) => {
+      const updated = await addSet.mutateAsync(firstSetBody(exercise.id, workout.sets));
+      const set = addedSet(workout.sets, updated.sets);
+      if (set) {
+        leave(() =>
+          router.push({
+            pathname: '/workouts/[id]/sets/[setId]',
+            params: { id, setId: String(set.id) },
+          })
+        );
       }
     });
   }
@@ -208,6 +242,23 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
           </ThemedView>
         );
       })}
+
+      <Button
+        label="+ Add exercise"
+        accessibilityLabel="Add exercise"
+        variant="secondary"
+        onPress={() => setPickerOpen(true)}
+      />
+      <ExercisePicker
+        visible={pickerOpen}
+        excludeIds={groups.map((g) => g.exerciseId)}
+        onClose={() => setPickerOpen(false)}
+        onPick={(exercise) => {
+          picked.current = exercise;
+          setPickerOpen(false);
+        }}
+        onClosed={addExerciseFlow}
+      />
 
       <View style={styles.footer}>
         <Button

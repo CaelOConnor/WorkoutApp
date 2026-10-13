@@ -93,6 +93,16 @@ export function addSetBodyFrom(lastSet: WorkoutDetailSet): AddSetBody {
   };
 }
 
+// The first set of an exercise newly added to a saved workout: a placeholder at 0 reps × 0, saved
+// straight away so the set sheet can open on it for the real numbers. 0 is valid for both fields,
+// and stands out if the user leaves it. The unit is the workout's last one (lb if it has no sets).
+export function firstSetBody(
+  exerciseId: number,
+  workoutSets: readonly WorkoutDetailSet[]
+): AddSetBody {
+  return { exercise_id: exerciseId, reps: 0, weight: 0, unit: workoutSets.at(-1)?.unit ?? 'lb' };
+}
+
 // ---------- Workout date and notes ----------
 
 export interface WorkoutForm {

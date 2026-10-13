@@ -12,15 +12,15 @@ import { jsonResponse, mockApi, requestsMade } from '@/test-utils/mock-api';
 
 jest.mock('@/api/config', () => ({ getApiUrl: () => 'http://api.test' }));
 jest.mock('expo-secure-store');
-// The native date picker can't render in Jest (it's a SwiftUI / Jetpack Compose view). This
-// stand-in is a plain View that keeps every prop, so a test could fire its onValueChange.
-// jest.mock factories run before the imports, so they load what they need with
-// jest.requireActual; the type argument gives the result the module's real type.
-jest.mock('@expo/ui/community/datetime-picker', () => {
+// The native date picker can't render in Jest: on iOS (Jest's platform) DateField uses SwiftUI
+// views through @expo/ui. These stand-ins are plain Views that keep every prop, so a test could
+// fire the picker's onDateChange. jest.mock factories run before the imports, so they load what
+// they need with jest.requireActual; the type argument gives the result the module's real type.
+jest.mock('@expo/ui/swift-ui', () => {
   const { createElement } = jest.requireActual<typeof import('react')>('react');
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');
-  const DateTimePicker = (props: object) => createElement(View, props);
-  return { __esModule: true, DateTimePicker, default: DateTimePicker };
+  const PassThrough = (props: object) => createElement(View, props);
+  return { __esModule: true, Host: PassThrough, DatePicker: PassThrough };
 });
 
 // 05:30 UTC on Wednesday 14 October is 22:30 on Tuesday the 13th in Los Angeles, the zone Jest
@@ -258,4 +258,19 @@ it('sends one request when Save is double-tapped', async () => {
 
   await waitFor(() => expect(app.getPathname()).toBe('/workouts/7'));
   expect(requestsMade(fetchMock).filter((r) => r === 'POST /workouts')).toHaveLength(1);
+});
+
+it('saves the day picked in the date picker', async () => {
+  const { saved } = fakeServer();
+  await openLogScreen();
+
+  // The picker hands back a Date, an instant in time. 20:00 on the 11th in Los Angeles is already
+  // 03:00 on the 12th in UTC, so this checks the day is read in the phone's time zone.
+  await fireEvent(screen.getByTestId('date-picker'), 'dateChange', new Date(2026, 9, 11, 20, 0));
+  await addExercise('Squat');
+  await fillSet('Squat', 1, '5', '225');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
+
+  await waitFor(() => expect(saved).toHaveLength(1));
+  expect(saved[0]?.date).toBe('2026-10-11');
 });
