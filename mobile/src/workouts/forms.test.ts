@@ -17,7 +17,7 @@ function set(overrides: Partial<WorkoutDetailSet>): WorkoutDetailSet {
     exercise_id: 1,
     set_number: 1,
     reps: 5,
-    weight: '100.00',
+    weight: 100,
     unit: 'lb',
     exercise_name: 'Squat',
     ...overrides,
@@ -26,7 +26,7 @@ function set(overrides: Partial<WorkoutDetailSet>): WorkoutDetailSet {
 
 describe('setFormFrom', () => {
   it('prefills the form as text, without trailing zeros on the weight', () => {
-    expect(setFormFrom(set({ reps: 8, weight: '132.50', unit: 'kg' }))).toEqual({
+    expect(setFormFrom(set({ reps: 8, weight: 132.5, unit: 'kg' }))).toEqual({
       reps: '8',
       weight: '132.5',
       unit: 'kg',
@@ -78,7 +78,7 @@ describe('parseSetForm', () => {
 
 describe('addSetBodyFrom', () => {
   it("copies the exercise's last set, without a set_number (the server assigns it)", () => {
-    expect(addSetBodyFrom(set({ exercise_id: 4, reps: 3, weight: '132.50', unit: 'kg' }))).toEqual({
+    expect(addSetBodyFrom(set({ exercise_id: 4, reps: 3, weight: 132.5, unit: 'kg' }))).toEqual({
       exercise_id: 4,
       reps: 3,
       weight: 132.5,

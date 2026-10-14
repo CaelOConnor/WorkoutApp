@@ -27,19 +27,13 @@ export function groupSetsByExercise(sets: readonly WorkoutDetailSet[]): Exercise
   return [...groups.values()];
 }
 
-// '225.00' -> '225', '132.50' -> '132.5'. The API sends NUMERIC as a string, and String(Number())
-// prints the shortest form. Weights have at most 2 decimals, so no float noise can show up.
-export function formatWeight(weight: string): string {
-  return String(Number(weight));
-}
-
 // 'Set 1 · 5 reps × 225 lb'. `index` is the set's position within its exercise (0-based), which
 // is what the user sees as the set number. The stored set_number can't be shown as is: it has
 // gaps after deletes, and its scheme depends on how the set was added (1..n per exercise when a
 // workout is logged, but the workout's highest + 1 for "+ Add set"; see ROADMAP.md).
 export function formatSetLine(set: WorkoutDetailSet, index: number): string {
   const reps = `${set.reps} ${set.reps === 1 ? 'rep' : 'reps'}`;
-  return `Set ${index + 1} · ${reps} × ${formatWeight(set.weight)} ${set.unit}`;
+  return `Set ${index + 1} · ${reps} × ${set.weight} ${set.unit}`;
 }
 
 // The set that's in `after` but not in `before`: the one a POST .../sets just added. Compared by

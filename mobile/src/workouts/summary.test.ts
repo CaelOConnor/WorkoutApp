@@ -10,7 +10,7 @@ function set(overrides: Partial<WorkoutDetailSet>): WorkoutDetailSet {
     exercise_id: 1,
     set_number: 1,
     reps: 5,
-    weight: '100.00',
+    weight: 100,
     unit: 'lb',
     exercise_name: 'Squat',
     ...overrides,

@@ -48,12 +48,10 @@ function isPositiveIntegerOrNull(value: unknown): value is number | null {
   return value === null || isPositiveInteger(value);
 }
 
-// Postgres NUMERIC arrives as a decimal string ("135.00"). Checking the format, not just
-// `typeof`, means the planned switch to a number (ROADMAP Phase 4) fails these tests loudly.
-const WEIGHT_PATTERN = /^\d+(\.\d+)?$/;
-
-function isWeightString(value: unknown): value is string {
-  return typeof value === 'string' && WEIGHT_PATTERN.test(value);
+// sets.weight is NUMERIC(6,2); the backend parses it to a number (db/pool.ts), e.g. 135 or 132.5.
+// typeof NaN and typeof Infinity are both 'number', so Number.isFinite does the real check.
+function isWeight(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 function isWeightUnit(value: unknown): value is WeightUnit {
@@ -107,7 +105,7 @@ function isWorkoutDetailSet(value: unknown): value is WorkoutDetailSet {
     isPositiveInteger(value.exercise_id) &&
     isPositiveInteger(value.set_number) &&
     isNonNegativeInteger(value.reps) &&
-    isWeightString(value.weight) &&
+    isWeight(value.weight) &&
     isWeightUnit(value.unit) &&
     typeof value.exercise_name === 'string'
   );

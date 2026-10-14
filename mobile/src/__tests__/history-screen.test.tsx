@@ -22,9 +22,9 @@ const WORKOUTS: WorkoutDetail[] = [
     date: '2026-10-14',
     notes: null,
     sets: [
-      { id: 31, exercise_id: 1, set_number: 1, reps: 5, weight: '225.00', unit: 'lb', exercise_name: 'Squat' },
-      { id: 32, exercise_id: 1, set_number: 2, reps: 5, weight: '225.00', unit: 'lb', exercise_name: 'Squat' },
-      { id: 33, exercise_id: 2, set_number: 3, reps: 8, weight: '135.00', unit: 'lb', exercise_name: 'Bench Press' },
+      { id: 31, exercise_id: 1, set_number: 1, reps: 5, weight: 225, unit: 'lb', exercise_name: 'Squat' },
+      { id: 32, exercise_id: 1, set_number: 2, reps: 5, weight: 225, unit: 'lb', exercise_name: 'Squat' },
+      { id: 33, exercise_id: 2, set_number: 3, reps: 8, weight: 135, unit: 'lb', exercise_name: 'Bench Press' },
     ],
   },
   {
@@ -32,7 +32,7 @@ const WORKOUTS: WorkoutDetail[] = [
     date: '2026-10-11', // a Sunday: last week, not this week
     notes: null,
     sets: [
-      { id: 21, exercise_id: 3, set_number: 1, reps: 3, weight: '315.00', unit: 'lb', exercise_name: 'Deadlift' },
+      { id: 21, exercise_id: 3, set_number: 1, reps: 3, weight: 315, unit: 'lb', exercise_name: 'Deadlift' },
     ],
   },
   { id: 1, date: '2026-09-30', notes: null, sets: [] },

@@ -33,7 +33,7 @@ const validSet = {
   exercise_id: 1,
   set_number: 1,
   reps: 5,
-  weight: '135.00',
+  weight: 135,
   unit: 'lb',
   exercise_name: 'Squat',
 } satisfies WorkoutDetailSet;
@@ -115,8 +115,12 @@ describe('isWorkoutDetail', () => {
     ['missing sets', { ...validWorkout, sets: undefined }],
     ['undefined notes (must be string or null)', { ...validWorkout, notes: undefined }],
     ['a set with negative reps', { ...validWorkout, sets: [{ ...validSet, reps: -1 }] }],
-    ['a set with a numeric weight', { ...validWorkout, sets: [{ ...validSet, weight: 135 }] }],
-    ['a set with a non-numeric weight', { ...validWorkout, sets: [{ ...validSet, weight: 'heavy' }] }],
+    // The old string form: an app built against the new server should fail loudly on an old one.
+    ['a set with a string weight', { ...validWorkout, sets: [{ ...validSet, weight: '135.00' }] }],
+    ['a set with a negative weight', { ...validWorkout, sets: [{ ...validSet, weight: -5 }] }],
+    // typeof NaN is 'number', so a typeof check alone would let these through.
+    ['a set with a NaN weight', { ...validWorkout, sets: [{ ...validSet, weight: Number.NaN }] }],
+    ['a set with an infinite weight', { ...validWorkout, sets: [{ ...validSet, weight: Infinity }] }],
     ['a set with an unknown unit', { ...validWorkout, sets: [{ ...validSet, unit: 'stone' }] }],
     ['a set without exercise_name', { ...validWorkout, sets: [{ ...validSet, exercise_name: undefined }] }],
   ])('rejects %s', (_label, value) => {

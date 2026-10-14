@@ -52,12 +52,9 @@ const INVALID_WEIGHTS = [
   0.001, // would be stored as 0.00
 ];
 
-// The other side of each boundary, with what Postgres should store for it.
-const VALID_WEIGHTS: [weight: number, stored: string][] = [
-  [9999.99, '9999.99'],
-  [100.12, '100.12'],
-  [0.01, '0.01'],
-];
+// The other side of each boundary. Each must come back as the same number that was sent: NUMERIC(6,2)
+// holds at most 6 significant digits, well within the ~15 a JS number (a float64) keeps exactly.
+const VALID_WEIGHTS = [9999.99, 100.12, 0.01];
 
 // Largest value a Postgres INTEGER holds; reps, set_number and exercise_id are all INTEGER.
 const MAX_PG_INTEGER = 2_147_483_647;
@@ -155,7 +152,7 @@ describe('POST /workouts with a valid token', () => {
     expect(workouts.rows).toEqual([]);
   });
 
-  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight) => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
@@ -163,7 +160,7 @@ describe('POST /workouts with a valid token', () => {
 
     expect(res.status).toBe(201);
     const saved = await pool.query<Pick<WorkoutSet, 'weight'>>('SELECT weight FROM sets');
-    expect(saved.rows).toEqual([{ weight: stored }]);
+    expect(saved.rows).toEqual([{ weight }]);
   });
 
   it.each(OVERSIZED_INTEGER_FIELDS)('returns 400 and saves nothing for %s past the INTEGER max', async (_label, field) => {
@@ -225,7 +222,7 @@ describe('GET /workouts with a valid token', () => {
         date: DATE_ONLY,
         notes: "A's workout",
         sets: [
-          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
         ],
       },
     ];
@@ -251,9 +248,9 @@ describe('GET /workouts with a valid token', () => {
         date: '2026-09-02',
         notes: "A's workout",
         sets: [
-          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
-          { id: a2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 8, weight: '60.00', unit: 'lb' },
-          { id: a3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 6, weight: '80.00', unit: 'lb' },
+          { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+          { id: a2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 8, weight: 60, unit: 'lb' },
+          { id: a3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 6, weight: 80, unit: 'lb' },
         ],
       },
       {
@@ -261,8 +258,8 @@ describe('GET /workouts with a valid token', () => {
         date: '2026-09-01',
         notes: 'Leg day',
         sets: [
-          { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
-          { id: b2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: '140.00', unit: 'lb' },
+          { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+          { id: b2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: 140, unit: 'lb' },
         ],
       },
     ];
@@ -345,10 +342,10 @@ describe('GET /workouts/:id with a valid token', () => {
       date: '2026-09-05',
       notes: 'Leg day',
       sets: [
-        // NUMERIC(6,2) comes back as a string, so weights are '100.00', not 100.
-        { id: set1?.id ?? -1, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
-        { id: set2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: '120.50', unit: 'lb' },
-        { id: set3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 8, weight: '60.00', unit: 'lb' },
+        // NUMERIC(6,2) comes back as a number (db/pool.ts), so 100, not '100.00'.
+        { id: set1?.id ?? -1, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+        { id: set2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: 120.5, unit: 'lb' },
+        { id: set3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 8, weight: 60, unit: 'lb' },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -423,7 +420,7 @@ describe('PATCH /workouts/:id with a valid token', () => {
       date: DATE_ONLY,
       notes: 'Heavy leg day',
       sets: [
-        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -686,12 +683,12 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
       date: DATE_ONLY,
       notes: 'Leg day',
       sets: [
-        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
-        { id: set.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 4, weight: '125.50', unit: 'lb' },
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+        { id: set.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 4, weight: 125.5, unit: 'lb' },
       ],
     };
     expect(res.body).toEqual(expected);
-    expect(await readSet(set.id)).toEqual({ ...original, reps: 4, weight: '125.50' });
+    expect(await readSet(set.id)).toEqual({ ...original, reps: 4, weight: 125.5 });
   });
 
   it('changes the exercise, and the response shows the new exercise name', async () => {
@@ -833,14 +830,14 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     expect(await readSet(set.id)).toEqual(original);
   });
 
-  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight) => {
     const res = await request(app)
       .patch(`/workouts/${workout.id}/sets/${set.id}`)
       .set('Authorization', authHeader(lifter.id))
       .send({ weight });
 
     expect(res.status).toBe(200);
-    expect(await readSet(set.id)).toEqual({ ...original, weight: stored });
+    expect(await readSet(set.id)).toEqual({ ...original, weight });
   });
 
   it.each(OVERSIZED_INTEGER_FIELDS)('returns 400 and changes nothing for %s past the INTEGER max', async (_label, body) => {
@@ -1035,8 +1032,8 @@ describe('POST /workouts/:id/sets with a valid token', () => {
       date: DATE_ONLY,
       notes: 'Leg day',
       sets: [
-        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: '100.00', unit: 'lb' },
-        { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 5, reps: 8, weight: '60.50', unit: 'kg' },
+        { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+        { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 5, reps: 8, weight: 60.5, unit: 'kg' },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -1058,7 +1055,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     const body: WorkoutDetail = res.body;
     expect(body.sets.map((s) => s.set_number)).toEqual([1, 3, 4]);
     // unit was missing too, so it gets the column's default.
-    expect(body.sets[2]).toMatchObject({ exercise_id: squatId, set_number: 4, reps: 2, weight: '130.00', unit: 'lb' });
+    expect(body.sets[2]).toMatchObject({ exercise_id: squatId, set_number: 4, reps: 2, weight: 130, unit: 'lb' });
   });
 
   it("only counts this workout's sets when assigning set_number", async () => {
@@ -1091,7 +1088,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(res.status).toBe(201);
     const body: WorkoutDetail = res.body;
     expect(body.sets).toEqual([
-      { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 10, weight: '40.00', unit: 'lb' },
+      { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 10, weight: 40, unit: 'lb' },
     ]);
   });
 
@@ -1197,7 +1194,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(await setIdsOf(workout.id)).toHaveLength(1);
   });
 
-  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight, stored) => {
+  it.each(VALID_WEIGHTS)('saves weight %s exactly', async (weight) => {
     const res = await request(app)
       .post(`/workouts/${workout.id}/sets`)
       .set('Authorization', authHeader(lifter.id))
@@ -1205,7 +1202,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
 
     expect(res.status).toBe(201);
     const body: WorkoutDetail = res.body;
-    expect(body.sets[1]?.weight).toBe(stored);
+    expect(body.sets[1]?.weight).toBe(weight);
   });
 
   it('accepts the largest INTEGER as an explicit set_number and reps', async () => {

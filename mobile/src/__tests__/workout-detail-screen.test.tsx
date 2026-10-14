@@ -43,9 +43,9 @@ function initialWorkout(): WorkoutDetail {
     date: '2026-10-14',
     notes: 'Heavy day',
     sets: [
-      { id: 31, set_number: 1, reps: 5, weight: '225.00', unit: 'lb', ...SQUAT },
-      { id: 32, set_number: 2, reps: 5, weight: '235.00', unit: 'lb', ...SQUAT },
-      { id: 33, set_number: 3, reps: 8, weight: '135.00', unit: 'lb', ...BENCH },
+      { id: 31, set_number: 1, reps: 5, weight: 225, unit: 'lb', ...SQUAT },
+      { id: 32, set_number: 2, reps: 5, weight: 235, unit: 'lb', ...SQUAT },
+      { id: 33, set_number: 3, reps: 8, weight: 135, unit: 'lb', ...BENCH },
     ],
   };
 }
@@ -114,7 +114,7 @@ function fakeServer() {
           exercise_name: name,
           set_number: Math.max(...w.sets.map((s) => s.set_number)) + 1,
           reps,
-          weight: weight.toFixed(2),
+          weight,
           unit: unit ?? 'lb',
         };
         return { ...w, sets: [...w.sets, added] };
@@ -133,7 +133,7 @@ function fakeServer() {
       const { reps, weight, unit } = body as { reps: number; weight: number; unit: 'lb' | 'kg' };
       return save((w) => ({
         ...w,
-        sets: w.sets.map((s) => (s.id === id ? { ...s, reps, weight: weight.toFixed(2), unit } : s)),
+        sets: w.sets.map((s) => (s.id === id ? { ...s, reps, weight, unit } : s)),
       }));
     });
     routes[`DELETE /workouts/3/sets/${id}`] = write(() => {

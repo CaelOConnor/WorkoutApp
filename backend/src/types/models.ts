@@ -10,6 +10,7 @@ export type WeightUnit = 'lb' | 'kg';
 // These describe what `pg` hands back for each table. Nullable columns are `T | null`.
 // Note: `pg` turns TIMESTAMP columns into JS `Date` objects (ISO strings once sent through
 // res.json()). DATE columns are the exception: db/pool.ts keeps them as 'YYYY-MM-DD' strings.
+// NUMERIC columns (sets.weight) would be strings; db/pool.ts parses them to numbers.
 
 export interface User {
   id: number;
@@ -43,9 +44,9 @@ export interface WorkoutSet {
   exercise_id: number;
   set_number: number;
   reps: number;
-  // Postgres NUMERIC comes back from `pg` as a string (e.g. "135.00") so no precision is lost.
-  // Left as string for now to match current API behavior; convert with Number() if needed.
-  weight: string;
+  // NUMERIC(6,2) in Postgres. pg would return it as a string ('135.00'); db/pool.ts parses it
+  // to a number, which holds every NUMERIC(6,2) value exactly. Trailing zeros are gone: 135, not 135.00.
+  weight: number;
   unit: WeightUnit;
 }
 

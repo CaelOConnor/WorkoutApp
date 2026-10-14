@@ -3,7 +3,6 @@ import type { WorkoutDetailSet } from '@shared/models';
 import {
   addedSet,
   formatSetLine,
-  formatWeight,
   groupSetsByExercise,
   parseRouteId,
 } from './detail';
@@ -15,7 +14,7 @@ function set(overrides: Partial<WorkoutDetailSet>): WorkoutDetailSet {
     exercise_id: 1,
     set_number: 1,
     reps: 5,
-    weight: '100.00',
+    weight: 100,
     unit: 'lb',
     exercise_name: 'Squat',
     ...overrides,
@@ -56,25 +55,16 @@ describe('groupSetsByExercise', () => {
   });
 });
 
-describe('formatWeight', () => {
-  it('drops trailing zeros from the NUMERIC string', () => {
-    expect(formatWeight('225.00')).toBe('225');
-    expect(formatWeight('132.50')).toBe('132.5');
-    expect(formatWeight('132.25')).toBe('132.25');
-    expect(formatWeight('0.00')).toBe('0');
-  });
-});
-
 describe('formatSetLine', () => {
   it('numbers by position, not the stored set_number', () => {
     // Stored set_number 7 (gaps after deletes, or interleaved with another exercise).
-    const line = formatSetLine(set({ set_number: 7, reps: 5, weight: '225.00', unit: 'lb' }), 0);
+    const line = formatSetLine(set({ set_number: 7, reps: 5, weight: 225, unit: 'lb' }), 0);
 
     expect(line).toBe('Set 1 · 5 reps × 225 lb');
   });
 
   it('uses the singular for one rep, and shows kg', () => {
-    expect(formatSetLine(set({ reps: 1, weight: '102.50', unit: 'kg' }), 2)).toBe(
+    expect(formatSetLine(set({ reps: 1, weight: 102.5, unit: 'kg' }), 2)).toBe(
       'Set 3 · 1 rep × 102.5 kg'
     );
   });

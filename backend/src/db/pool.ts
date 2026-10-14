@@ -8,6 +8,13 @@ import { Pool, types } from 'pg';
 // (1082 is DATE's type OID, Postgres's internal id for the type.)
 types.setTypeParser(types.builtins.DATE, (value: string) => value);
 
+// pg also hands back NUMERIC (OID 1700) as a string ('135.00'), since NUMERIC can hold more digits
+// than a JS number keeps exactly. The only NUMERIC column is sets.weight, NUMERIC(6,2): at most 6
+// significant digits, well within the ~15 a float64 represents exactly, so Number() loses nothing.
+// Caution: this applies to every NUMERIC result, including SUM/AVG over weight (a volume chart,
+// say). Those stay exact up to ~15 digits; past that, cast in SQL or switch this parser off.
+types.setTypeParser(types.builtins.NUMERIC, (value: string) => Number(value));
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });

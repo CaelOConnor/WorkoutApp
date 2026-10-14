@@ -12,7 +12,6 @@ import type {
 } from '@shared/models';
 
 import { isCalendarDate } from './dates';
-import { formatWeight } from './detail';
 
 // The result of parsing a form: the body to send, or a message to show. A discriminated union,
 // like ParsedBody in api/client.ts: checking `ok` tells TypeScript which fields exist.
@@ -39,8 +38,9 @@ const MAX_WEIGHT = 9999.99; // NUMERIC(6,2)
 // Digits, then optionally a point and one or two more: what NUMERIC(6,2) stores exactly.
 const WEIGHT_PATTERN = /^\d+(\.\d{1,2})?$/;
 
+// A number prints in its shortest form, so String(132.5) is '132.5' and String(225) is '225'.
 export function setFormFrom(set: WorkoutDetailSet): SetForm {
-  return { reps: String(set.reps), weight: formatWeight(set.weight), unit: set.unit };
+  return { reps: String(set.reps), weight: String(set.weight), unit: set.unit };
 }
 
 const REPS_ERROR = 'Reps must be a whole number.';
@@ -88,7 +88,7 @@ export function addSetBodyFrom(lastSet: WorkoutDetailSet): AddSetBody {
   return {
     exercise_id: lastSet.exercise_id,
     reps: lastSet.reps,
-    weight: Number(lastSet.weight),
+    weight: lastSet.weight,
     unit: lastSet.unit,
   };
 }

@@ -52,7 +52,7 @@ function fakeServer() {
         exercise_name: EXERCISES.find((e) => e.id === s.exercise_id)?.name ?? '?',
         set_number: s.set_number,
         reps: s.reps,
-        weight: s.weight.toFixed(2),
+        weight: s.weight,
         unit: s.unit ?? 'lb',
       })),
     };

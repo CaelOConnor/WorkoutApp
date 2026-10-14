@@ -46,7 +46,7 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - [ ] The Android branch of `DateField` (a button that opens the picker as a dialog) isn't covered by tests: Jest runs as iOS. Check it on an Android phone.
 
 ## Phase 4: Progress charts
-- [ ] Weight as a number: `pg` returns `NUMERIC` as a string (`"135.00"`). Parse it (or register a pg type parser) and change `WorkoutSet.weight` to `number`.
+- [x] Weight as a number: a pg type parser for NUMERIC (OID 1700) in `db/pool.ts` returns `Number(value)` (exact for `NUMERIC(6,2)`), and `WorkoutSet.weight` is a `number` (e.g. `135`, `132.5`; no trailing zeros). The mobile response guard requires a finite, non-negative number and rejects the old string form; `formatWeight` was removed. The parser is global, so future `SUM`/`AVG` over weight also come back as numbers (exact up to ~15 significant digits).
 - [x] DATE time zone (done early, in Phase 3, since week grouping needs the right day): a pg type parser for DATE (OID 1082) in `db/pool.ts` returns `'YYYY-MM-DD'`, and `Workout.date` is a `string`. Tests assert exact dates where they set one and the `YYYY-MM-DD` format elsewhere.
 - [ ] `POST /workouts` without a `date` falls back to `new Date()`, i.e. "today" in the server's time zone, which may not be the user's day. The app always sends a date, so it's harmless for now; consider making `date` required.
 - [ ] Endpoint for one exercise's progress over time (e.g. top weight or volume per date).
