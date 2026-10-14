@@ -41,11 +41,17 @@ export default function HistoryScreen() {
         options={{
           headerLeft: () => <TextButton label="Log out" onPress={() => void logout()} />,
           headerRight: () => (
-            <TextButton
-              label="+ Log workout"
-              accessibilityLabel="Log workout"
-              onPress={() => guard.navigate(() => router.push('/workouts/new'))}
-            />
+            <View style={styles.headerButtons}>
+              <TextButton
+                label="Progress"
+                onPress={() => guard.navigate(() => router.push('/progress'))}
+              />
+              <TextButton
+                label="+ Log workout"
+                accessibilityLabel="Log workout"
+                onPress={() => guard.navigate(() => router.push('/workouts/new'))}
+              />
+            </View>
           ),
         }}
       />
@@ -147,6 +153,7 @@ function EmptyState() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  headerButtons: { flexDirection: 'row', gap: Spacing.three },
   // Lets the empty state fill the screen, so it can be centered.
   emptyContent: { flexGrow: 1 },
   sectionHeader: {

@@ -13,6 +13,9 @@ export const Colors = {
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
     danger: '#C62828',
+    // A chart's data series. Blue, the one color here with a hue: black or white would read as
+    // gray next to the axes. Each mode's step was checked for contrast on its background.
+    chart: '#2a78d6',
   },
   dark: {
     text: '#ffffff',
@@ -21,6 +24,9 @@ export const Colors = {
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
     danger: '#FF8A80',
+    // A chart's data series. Blue, the one color here with a hue: black or white would read as
+    // gray next to the axes. Each mode's step was checked for contrast on its background.
+    chart: '#3987e5',
   },
 } as const;
 

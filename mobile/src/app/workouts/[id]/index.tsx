@@ -92,13 +92,24 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
     });
   }
 
-  // The card's menu, then a confirmation. ask() doubles as a simple cross-platform menu.
-  function removeExerciseFlow(group: ExerciseGroup) {
-    change('Could not remove exercise', async () => {
+  // The card's menu. ask() doubles as a simple cross-platform menu. "Remove exercise" then asks
+  // for confirmation.
+  function exerciseMenuFlow(group: ExerciseGroup) {
+    change('Could not remove exercise', async (leave) => {
       const choice = await ask(group.exerciseName, undefined, [
+        { text: 'View progress' },
         { text: 'Remove exercise', style: 'destructive' },
         { text: 'Cancel', style: 'cancel' },
       ]);
+      if (choice === 'View progress') {
+        leave(() =>
+          router.push({
+            pathname: '/progress/[exerciseId]',
+            params: { exerciseId: String(group.exerciseId) },
+          })
+        );
+        return;
+      }
       if (choice !== 'Remove exercise') {
         return;
       }
@@ -195,7 +206,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
               <TextButton
                 label="⋯"
                 accessibilityLabel={`${group.exerciseName} options`}
-                onPress={() => removeExerciseFlow(group)}
+                onPress={() => exerciseMenuFlow(group)}
               />
             </View>
 

@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useState } from 'react';
 import { useColorScheme } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { createQueryClient, refetchOnAppForeground } from '@/api/query-client';
 import { AuthProvider, useAuth } from '@/auth/auth-provider';
@@ -21,14 +22,18 @@ export default function RootLayout() {
   const [queryClient] = useState(createQueryClient);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SplashScreenController />
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <RootNavigator />
-        </ThemeProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    // Gesture Handler needs a root view to detect touches in; the progress chart's
+    // press-and-hold uses it. flex: 1 so it fills the screen like a plain root would.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <SplashScreenController />
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <RootNavigator />
+          </ThemeProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -63,6 +68,9 @@ function RootNavigator() {
         <Stack.Screen name="workouts/[id]/index" options={{ title: 'Workout' }} />
         <Stack.Screen name="workouts/[id]/sets/[setId]" options={SHEET_OPTIONS} />
         <Stack.Screen name="workouts/[id]/edit" options={SHEET_OPTIONS} />
+        <Stack.Screen name="progress/index" options={{ title: 'Progress' }} />
+        {/* The screen replaces this title with the exercise's name once it has loaded. */}
+        <Stack.Screen name="progress/[exerciseId]" options={{ title: 'Progress' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ title: 'Log in' }} />

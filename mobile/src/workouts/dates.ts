@@ -10,8 +10,9 @@ const MS_PER_DAY = 86_400_000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// Days since 1970-01-01. The API guard (isDateString) has already checked the format.
-function toDayNumber(date: string): number {
+// Days since 1970-01-01. The API guard (isDateString) has already checked the format. Exported
+// for a chart's x axis too: the gap between two days on the axis is then the real number of days.
+export function dayNumber(date: string): number {
   const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
   return Date.UTC(year, month - 1, day) / MS_PER_DAY;
 }
@@ -29,13 +30,30 @@ function toDateString(utcDate: Date): string {
 }
 
 export function addDays(date: string, days: number): string {
-  return toDateString(fromDayNumber(toDayNumber(date) + days));
+  return toDateString(fromDayNumber(dayNumber(date) + days));
+}
+
+// Whole months later (or earlier, for a negative count), keeping the day of the month. A day the
+// target month doesn't have becomes its last day: 31 August minus 6 months is 28 February.
+export function addMonths(date: string, months: number): string {
+  const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
+  // Date.UTC rolls a month past 12 (or below 1) into the next (or previous) year, so the month
+  // arithmetic needs no special cases. Day 0 of the month after is the last day of this one.
+  const first = new Date(Date.UTC(year, month - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(day, lastDay));
+  return toDateString(first);
+}
+
+// The inverse of dayNumber.
+export function dateOfDayNumber(n: number): string {
+  return toDateString(fromDayNumber(n));
 }
 
 // The Monday on or before `date`. getUTCDay() counts from Sunday (0), so shift it to count from
 // Monday: Monday -> 0, ..., Sunday -> 6.
 export function startOfWeek(date: string): string {
-  const daysSinceMonday = (fromDayNumber(toDayNumber(date)).getUTCDay() + 6) % 7;
+  const daysSinceMonday = (fromDayNumber(dayNumber(date)).getUTCDay() + 6) % 7;
   return addDays(date, -daysSinceMonday);
 }
 
@@ -57,7 +75,7 @@ export function localNoon(date: string): Date {
 // 'Mon, Oct 12'. Month names are spelled out here rather than with toLocaleDateString, which
 // depends on the JS engine's Intl data and so can differ between Hermes, Node and devices.
 export function formatWorkoutDate(date: string): string {
-  const d = fromDayNumber(toDayNumber(date));
+  const d = fromDayNumber(dayNumber(date));
   return `${WEEKDAYS[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
@@ -73,13 +91,13 @@ export function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) {
     return false;
   }
-  const dayNumber = toDayNumber(value);
-  return !Number.isNaN(dayNumber) && toDateString(fromDayNumber(dayNumber)) === value;
+  const days = dayNumber(value);
+  return !Number.isNaN(days) && toDateString(fromDayNumber(days)) === value;
 }
 
 // 'Oct 5', or 'Oct 5, 2025' when it isn't in `currentYear`.
-function formatShortDate(date: string, currentYear: number): string {
-  const d = fromDayNumber(toDayNumber(date));
+export function formatShortDate(date: string, currentYear: number): string {
+  const d = fromDayNumber(dayNumber(date));
   const year = d.getUTCFullYear();
   const text = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
   return year === currentYear ? text : `${text}, ${year}`;

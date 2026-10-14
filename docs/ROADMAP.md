@@ -55,7 +55,10 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
   - `e1rm` is Epley, `weight × (1 + reps/30)` (a 1-rep set is its weight), on every set with 1+ reps, no cap. Only sets with 1+ reps count, for every metric and for the default unit: a 0-rep set (failed attempt, the 0×0 placeholder) adds nothing to volume and mustn't be the heaviest set. A day with only 0-rep sets has no point.
   - `from`/`to` optional and inclusive (all time when missing). 400 for a bad date, `from > to` or an unknown unit; 404 for an exercise that's neither built-in nor the caller's; `points: []` for one never logged.
 - [x] `GET /exercises/logged` (requires auth): the exercises the caller has logged a set of 1+ reps for (built-in or their own), most recent first, then by name, with `last_date` and `unit` (the unit of the most recent set), for the progress picker. SQL for both in `src/db/progress.ts`; tests in `test/progress.test.ts`.
-- [ ] Progress screens (stack screens; tabs wait for Phase 5): `/progress` lists logged exercises with search, opened from a History header button; `/progress/[exerciseId]` shows the chart, also opened from "View progress" in the workout detail's exercise card menu. Toggle between estimated 1RM (default), heaviest set and volume; range presets 3M / 6M (default) / 1Y / All. Bodyweight-only exercises show "no weighted sets". Chart: Victory Native (Skia, in Expo Go).
+- [x] Progress screens (stack screens; tabs wait for Phase 5): `/progress` lists logged exercises with search, opened from a History header button; `/progress/[exerciseId]` shows the chart, also opened from "View progress" in the workout detail's exercise card menu. Toggle between estimated 1RM (default), heaviest set and volume; range presets 3M / 6M (default) / 1Y / All. Bodyweight-only exercises show "no weighted sets". Chart: Victory Native (Skia, in Expo Go).
+  - Also an lb/kg switch (starts on the server's default unit), Latest/Best tiles, press-and-hold readout, and a list of every point under the chart (newest first), which is what screen readers and tests read. Series color is the theme's `chart` token (blue; black/white read as gray next to the axes).
+  - The chart lives only in `components/progress-chart.tsx`; `jest.setup.tsx` replaces it with a placeholder in every test, since Skia can't render in Jest. Check chart changes on a phone.
+  - Root layout is wrapped in `GestureHandlerRootView` (needed for the chart's press gesture).
 
 ## Phase 5: Templates
 - [ ] Save a reusable workout (e.g. "leg day") as a list of exercises.
@@ -65,6 +68,8 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
 - **Intermittent Vitest worker crash on Windows.** About 7% of `npm test` runs (6 of 90 measured, 2026-10-08) end with `Worker exited unexpectedly with exit code 3221226505` (`0xC0000409`, a native fast-fail), always while running `test/workouts.test.ts`. The rest of the suite passes; rerunning gets a clean run. Seen on the untouched tree too, so it isn't caused by a specific change. Node 24.15, Vitest 5.0.3, `pool: 'forks'` (default).
   - Ruled out: `pool: 'threads'` (same rate, ~4 in 60, and worse: the whole Vitest process dies with no summary, so failures are silent); swapping `bcrypt` for `bcryptjs` (crashed 2 of the first 7 runs with no native bcrypt loaded).
   - Not yet tried: `isolate: false`, `pg` native bindings (not used, but worth confirming), a different Node 24 patch or Node 22, splitting `workouts.test.ts` (largest file) to see if size or run time matters.
+
+- **Typed routes go wrong when a file is added while Expo runs (Windows).** Expo's route-type watcher checks `path.relative(...).startsWith('../')`, but Windows paths use `..\`, so files outside `src/app` get added as routes and new route files get backslashed keys (seen 2026-10-14, Expo SDK 57, `@expo/router-server`). `npm run typecheck` then rejects valid routes like `/progress`. Fix: restart `npx expo start`, which regenerates `.expo/types/router.d.ts` from scratch.
 
 ## Later
 - Other activity types: climbing, running, swimming.

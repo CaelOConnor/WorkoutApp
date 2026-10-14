@@ -12,7 +12,10 @@ import type {
   CreateWorkoutResponse,
   ErrorResponse,
   Exercise,
+  ExerciseProgress,
+  LoggedExercise,
   LoginResponse,
+  ProgressPoint,
   PublicUser,
   WeightUnit,
   WorkoutDetail,
@@ -125,6 +128,44 @@ export function isWorkoutDetail(value: unknown): value is WorkoutDetail {
 
 // GET /workouts
 export const isWorkoutDetailList = isListOf(isWorkoutDetail);
+
+// Progress numbers are rounded weights (or sums of them): finite and never negative, like a weight.
+function isProgressPoint(value: unknown): value is ProgressPoint {
+  return (
+    isRecord(value) &&
+    isDateString(value.date) &&
+    isWeight(value.top_weight) &&
+    isWeight(value.e1rm) &&
+    isWeight(value.volume) &&
+    // A point only exists for a day with at least one counted set.
+    isPositiveInteger(value.sets)
+  );
+}
+
+// GET /exercises/:id/progress
+export function isExerciseProgress(value: unknown): value is ExerciseProgress {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.exercise_id) &&
+    typeof value.exercise_name === 'string' &&
+    isWeightUnit(value.unit) &&
+    Array.isArray(value.points) &&
+    value.points.every(isProgressPoint)
+  );
+}
+
+function isLoggedExercise(value: unknown): value is LoggedExercise {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.id) &&
+    typeof value.name === 'string' &&
+    isDateString(value.last_date) &&
+    isWeightUnit(value.unit)
+  );
+}
+
+// GET /exercises/logged
+export const isLoggedExerciseList = isListOf(isLoggedExercise);
 
 // POST /workouts (201): just the new workout's id.
 export function isCreateWorkoutResponse(value: unknown): value is CreateWorkoutResponse {

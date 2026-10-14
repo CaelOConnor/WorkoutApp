@@ -1,5 +1,7 @@
 import type {
   Exercise,
+  ExerciseProgress,
+  LoggedExercise,
   LoginResponse,
   PublicUser,
   WorkoutDetail,
@@ -10,6 +12,8 @@ import {
   isCreateWorkoutResponse,
   isErrorResponse,
   isExerciseList,
+  isExerciseProgress,
+  isLoggedExerciseList,
   isLoginResponse,
   isNoContent,
   isPublicUser,
@@ -174,5 +178,56 @@ describe('isCreateWorkoutResponse', () => {
 
   it.each([null, {}, { id: '7' }, { id: 0 }, { id: 1.5 }, [{ id: 7 }]])('rejects %p', (value) => {
     expect(isCreateWorkoutResponse(value)).toBe(false);
+  });
+});
+
+describe('isExerciseProgress', () => {
+  const validPoint = { date: '2026-09-03', top_weight: 105, e1rm: 126.7, volume: 1325, sets: 2 };
+  const validProgress = {
+    exercise_id: 1,
+    exercise_name: 'Squat',
+    unit: 'kg',
+    points: [validPoint],
+  } satisfies ExerciseProgress;
+
+  it('accepts progress with points, and with none', () => {
+    expect(isExerciseProgress(validProgress)).toBe(true);
+    expect(isExerciseProgress({ ...validProgress, points: [] })).toBe(true);
+  });
+
+  it('accepts zeros (bodyweight sets)', () => {
+    const zeros = { ...validPoint, top_weight: 0, e1rm: 0, volume: 0 };
+    expect(isExerciseProgress({ ...validProgress, points: [zeros] })).toBe(true);
+  });
+
+  it.each([
+    ['an unknown unit', { ...validProgress, unit: 'stone' }],
+    ['missing points', { ...validProgress, points: undefined }],
+    ['a missing exercise_name', { ...validProgress, exercise_name: undefined }],
+    ['a point with a timestamp date', { ...validProgress, points: [{ ...validPoint, date: '2026-09-03T00:00:00Z' }] }],
+    ['a point with a string metric', { ...validProgress, points: [{ ...validPoint, e1rm: '126.7' }] }],
+    ['a point with a negative volume', { ...validProgress, points: [{ ...validPoint, volume: -1 }] }],
+    ['a point with NaN', { ...validProgress, points: [{ ...validPoint, top_weight: Number.NaN }] }],
+    ['a point with 0 sets (every point has at least one)', { ...validProgress, points: [{ ...validPoint, sets: 0 }] }],
+  ])('rejects %s', (_label, value) => {
+    expect(isExerciseProgress(value)).toBe(false);
+  });
+});
+
+describe('isLoggedExerciseList', () => {
+  const validLogged = { id: 1, name: 'Squat', last_date: '2026-09-03', unit: 'lb' } satisfies LoggedExercise;
+
+  it('accepts a list, including an empty one', () => {
+    expect(isLoggedExerciseList([validLogged, { ...validLogged, id: 2, unit: 'kg' }])).toBe(true);
+    expect(isLoggedExerciseList([])).toBe(true);
+  });
+
+  it.each([
+    ['a single item (not a list)', validLogged],
+    ['a missing last_date', [{ ...validLogged, last_date: undefined }]],
+    ['an unknown unit', [{ ...validLogged, unit: 'st' }]],
+    ['a zero id', [{ ...validLogged, id: 0 }]],
+  ])('rejects %s', (_label, value) => {
+    expect(isLoggedExerciseList(value)).toBe(false);
   });
 });

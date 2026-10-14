@@ -1,5 +1,8 @@
 import {
   addDays,
+  addMonths,
+  dateOfDayNumber,
+  dayNumber,
   formatFullDate,
   formatWorkoutDate,
   groupByWeek,
@@ -174,5 +177,27 @@ describe('localNoon', () => {
     for (const day of ['2026-03-08', '2026-11-01']) {
       expect(localDateString(localNoon(day))).toBe(day);
     }
+  });
+});
+
+describe('addMonths', () => {
+  it('moves by whole months, keeping the day', () => {
+    expect(addMonths('2026-10-14', -6)).toBe('2026-04-14');
+    expect(addMonths('2026-10-14', -12)).toBe('2025-10-14');
+    expect(addMonths('2026-11-05', 3)).toBe('2027-02-05');
+  });
+
+  it("clamps to the month's last day when the day doesn't exist there", () => {
+    expect(addMonths('2026-08-31', -6)).toBe('2026-02-28');
+    expect(addMonths('2028-05-31', -3)).toBe('2028-02-29'); // a leap year
+    expect(addMonths('2026-12-31', -1)).toBe('2026-11-30');
+  });
+});
+
+describe('dayNumber and dateOfDayNumber', () => {
+  it('count days since 1970-01-01, and convert back', () => {
+    expect(dayNumber('1970-01-02')).toBe(1);
+    expect(dayNumber('2026-10-14') - dayNumber('2026-10-04')).toBe(10);
+    expect(dateOfDayNumber(dayNumber('2028-02-29'))).toBe('2028-02-29');
   });
 });
