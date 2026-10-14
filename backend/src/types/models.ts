@@ -82,6 +82,14 @@ export type AddSetBody = Omit<NewSetInput, 'set_number'> & { set_number?: number
 // "send only what changes". NewSetInput's unit was already optional, so nothing else differs.
 export type UpdateSetBody = Partial<NewSetInput>;
 
+// GET /exercises/:id/progress query string. Every key is optional. A missing unit means the unit
+// of the caller's most recent set of that exercise; a missing from/to leaves that end open.
+export interface ProgressQuery {
+  unit?: WeightUnit;
+  from?: string; // 'YYYY-MM-DD', inclusive
+  to?: string; // 'YYYY-MM-DD', inclusive
+}
+
 export interface AuthBody {
   email: string;
   password: string;
@@ -120,6 +128,31 @@ export type WorkoutDetailSet = Pick<
 // No user_id: the caller can only ever see their own workouts, so it would add nothing.
 export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {
   sets: WorkoutDetailSet[];
+};
+
+// One workout day of one exercise. Only sets with 1+ reps count, every weight is converted to the
+// response's unit first, and each number is rounded to 1 decimal.
+export interface ProgressPoint {
+  date: string; // 'YYYY-MM-DD'; workouts on the same day are merged into one point
+  top_weight: number; // heaviest set
+  e1rm: number; // best estimated one-rep max (Epley: weight × (1 + reps/30); 1 rep = the weight)
+  volume: number; // sum of weight × reps
+  sets: number; // how many sets counted
+}
+
+// GET /exercises/:id/progress. points are oldest first; [] if nothing matches.
+export interface ExerciseProgress {
+  exercise_id: number;
+  exercise_name: string;
+  unit: WeightUnit; // the unit every number in points is in
+  points: ProgressPoint[];
+}
+
+// One item of GET /exercises/logged: an exercise the caller has logged a set of 1+ reps for.
+// unit is that most recent set's unit, which is also the progress endpoint's default.
+export type LoggedExercise = Pick<Exercise, 'id' | 'name'> & {
+  last_date: string; // 'YYYY-MM-DD'
+  unit: WeightUnit;
 };
 
 export interface LoginResponse {

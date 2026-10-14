@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import pool from '../src/db/pool';
-import type { Exercise, PublicUser, Workout, WorkoutSet } from '../src/types/models';
+import type { Exercise, PublicUser, WeightUnit, Workout, WorkoutSet } from '../src/types/models';
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
@@ -22,10 +22,14 @@ export async function createUser(email: string, password: string): Promise<Publi
 }
 
 // Inserts an exercise so sets have a real exercise_id to point at (sets.exercise_id is a foreign key).
-export async function createExercise(name: string): Promise<Pick<Exercise, 'id'>> {
+// Built-in (created_by NULL) unless createdBy names the user whose custom exercise it is.
+export async function createExercise(
+  name: string,
+  createdBy: number | null = null
+): Promise<Pick<Exercise, 'id'>> {
   const result = await pool.query<Pick<Exercise, 'id'>>(
-    'INSERT INTO exercises (name) VALUES ($1) RETURNING id',
-    [name]
+    'INSERT INTO exercises (name, created_by) VALUES ($1, $2) RETURNING id',
+    [name, createdBy]
   );
   const exercise = result.rows[0];
   if (!exercise) {
@@ -56,17 +60,32 @@ export async function createWorkout(
   return workout;
 }
 
+// An empty workout on a given day, for tests where the date matters (createWorkout uses today).
+export async function createWorkoutOn(userId: number, date: string): Promise<Pick<Workout, 'id'>> {
+  const result = await pool.query<Pick<Workout, 'id'>>(
+    'INSERT INTO workouts (user_id, date) VALUES ($1, $2) RETURNING id',
+    [userId, date]
+  );
+  const workout = result.rows[0];
+  if (!workout) {
+    throw new Error('createWorkoutOn: insert returned no row');
+  }
+  return workout;
+}
+
 // Adds one more set to an existing workout, for tests that need several sets.
+// A default parameter value (unit = 'lb') makes the argument optional for callers.
 export async function addSet(
   workoutId: number,
   exerciseId: number,
   setNumber: number,
   reps: number,
-  weight: number
+  weight: number,
+  unit: WeightUnit = 'lb'
 ): Promise<Pick<WorkoutSet, 'id'>> {
   const result = await pool.query<Pick<WorkoutSet, 'id'>>(
-    'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-    [workoutId, exerciseId, setNumber, reps, weight]
+    'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    [workoutId, exerciseId, setNumber, reps, weight, unit]
   );
   const set = result.rows[0];
   if (!set) {

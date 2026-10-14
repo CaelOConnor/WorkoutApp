@@ -10,6 +10,7 @@ import type {
   AuthBody,
   CreateWorkoutBody,
   NewSetInput,
+  ProgressQuery,
   TokenPayload,
   UpdateSetBody,
   UpdateWorkoutBody,
@@ -185,6 +186,24 @@ export function isAddSetBody(value: unknown): value is AddSetBody {
     isNonNegativeInteger(value.reps) &&
     isSetWeight(value.weight) &&
     (value.unit === undefined || isWeightUnit(value.unit))
+  );
+}
+
+const PROGRESS_QUERY_KEYS = ['unit', 'from', 'to'];
+
+// unknown -> ProgressQuery, for req.query on GET /exercises/:id/progress.
+// Query values arrive as strings, or as an array when a key repeats (?unit=kg&unit=lb); an array
+// fails every check below. Unknown keys are rejected, like in the PATCH guards, so a typo such as
+// ?form= is a 400 instead of silently meaning "all time".
+export function isProgressQuery(value: unknown): value is ProgressQuery {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) => PROGRESS_QUERY_KEYS.includes(key)) &&
+    (value.unit === undefined || isWeightUnit(value.unit)) &&
+    (value.from === undefined || isDateString(value.from)) &&
+    (value.to === undefined || isDateString(value.to)) &&
+    // 'YYYY-MM-DD' strings sort in date order, so comparing the strings compares the days.
+    !(typeof value.from === 'string' && typeof value.to === 'string' && value.from > value.to)
   );
 }
 
