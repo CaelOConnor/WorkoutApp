@@ -1,22 +1,25 @@
 import type { Exercise } from '@shared/models';
 import { useEffect, useState } from 'react';
-import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { errorMessage } from '@/api/error-message';
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
 import { TextButton } from '@/components/text-button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
-import { searchExercises } from '@/workouts/exercise-search';
-import { useExercises } from '@/workouts/use-exercises';
+import { createExerciseName, searchExercises } from '@/workouts/exercise-search';
+import { useCreateExercise, useExercises } from '@/workouts/use-exercises';
 
 export interface ExercisePickerProps {
   visible: boolean;
   onClose: () => void;
-  // Called with the chosen exercise. The picker doesn't close itself: the caller decides.
+  // Called with the chosen exercise, which may be one the user just created from the search.
+  // The picker doesn't close itself: the caller decides.
   onPick: (exercise: Exercise) => void;
   // Exercises not to offer, e.g. the ones already in the workout.
   excludeIds?: readonly number[];
@@ -25,9 +28,10 @@ export interface ExercisePickerProps {
   onClosed?: () => void;
 }
 
-// Choose one exercise from GET /exercises, with a search box. Self-contained (it loads its own
-// data) and shown in a Modal, so any screen can use it: logging a new workout now, and adding an
-// exercise to an existing one later.
+// Choose one exercise from GET /exercises, with a search box. When the search isn't exactly the
+// name of an exercise, 'Create "<search>"' at the top of the list creates it (POST /exercises) and
+// picks it. Self-contained (it loads and creates its own data) and shown in a Modal, so any screen
+// can use it: logging a new workout, and adding an exercise to an existing one.
 export function ExercisePicker({
   visible,
   onClose,
@@ -73,7 +77,27 @@ type PickerContentProps = Required<Omit<ExercisePickerProps, 'visible' | 'onClos
 function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
   const theme = useTheme();
   const exercises = useExercises();
+  const createExercise = useCreateExercise();
+  // Stops a double tap on Create from sending two requests (see use-press-guard.ts).
+  const guard = usePressGuard();
   const [query, setQuery] = useState('');
+
+  function changeQuery(text: string) {
+    setQuery(text);
+    // The error was about the old text (e.g. a duplicate name), so it goes once the text changes.
+    createExercise.reset();
+  }
+
+  function create(name: string) {
+    void guard.run(async () => {
+      try {
+        // mutateAsync resolves with the new exercise (or rejects), unlike mutate, which only
+        // reports through callbacks. The rejection is caught here because createExercise.error
+        // already holds it for the message below; the catch just stops it being unhandled.
+        onPick(await createExercise.mutateAsync({ name }));
+      } catch {}
+    });
+  }
 
   function results() {
     if (!exercises.data) {
@@ -88,7 +112,8 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
       );
     }
     const matches = searchExercises(exercises.data, query, excludeIds);
-    if (matches.length === 0) {
+    const newName = createExerciseName(exercises.data, query);
+    if (matches.length === 0 && newName === null) {
       return <MessageState title={query.trim() ? 'No exercises match' : 'No exercises to add'} />;
     }
     return (
@@ -97,6 +122,25 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
         keyExtractor={(exercise) => String(exercise.id)}
         // Lets a tap on a result go through while the keyboard is up, instead of only closing it.
         keyboardShouldPersistTaps="handled"
+        // Rendered above the first item, and scrolls with the list.
+        ListHeaderComponent={
+          newName === null ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Create "${newName}"`}
+              accessibilityState={{ busy: createExercise.isPending }}
+              disabled={createExercise.isPending}
+              onPress={() => create(newName)}
+              style={({ pressed }) => [
+                styles.item,
+                styles.createItem,
+                pressed && { backgroundColor: theme.backgroundSelected },
+              ]}>
+              <ThemedText type="smallBold">{`Create "${newName}"`}</ThemedText>
+              {createExercise.isPending ? <ActivityIndicator /> : null}
+            </Pressable>
+          )
+        }
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
@@ -132,11 +176,20 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
             label="Search exercises"
             placeholder="Name or muscle group"
             value={query}
-            onChangeText={setQuery}
+            onChangeText={changeQuery}
             autoCorrect={false}
             autoCapitalize="none"
             clearButtonMode="while-editing"
           />
+          {createExercise.isError ? (
+            <ThemedText
+              type="small"
+              themeColor="danger"
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite">
+              {errorMessage(createExercise.error)}
+            </ThemedText>
+          ) : null}
         </View>
         {results()}
       </SafeAreaView>
@@ -153,6 +206,7 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
   },
   title: { fontSize: 18 },
-  search: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
+  search: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, gap: Spacing.two },
   item: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.three, gap: Spacing.half },
+  createItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 });

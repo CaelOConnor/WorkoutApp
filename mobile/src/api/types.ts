@@ -88,7 +88,8 @@ export function isPublicUser(value: unknown): value is PublicUser {
   return isRecord(value) && isPositiveInteger(value.id) && typeof value.email === 'string';
 }
 
-function isExercise(value: unknown): value is Exercise {
+// POST /exercises (201)
+export function isExercise(value: unknown): value is Exercise {
   return (
     isRecord(value) &&
     isPositiveInteger(value.id) &&

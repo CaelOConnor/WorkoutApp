@@ -1,6 +1,6 @@
 // Integration tests for the "Log workout" screen: the real app from src/app/, signed in, with a
 // fake backend.
-import type { CreateWorkoutBody, Exercise, WorkoutDetail } from '@shared/models';
+import type { CreateExerciseBody, CreateWorkoutBody, Exercise, WorkoutDetail } from '@shared/models';
 import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as SecureStore from 'expo-secure-store';
@@ -34,9 +34,15 @@ const EXERCISES: Exercise[] = [
 ];
 
 // A backend that saves one new workout (id 7) and then serves it in the history and as detail.
-// `holdSave()` keeps the POST unanswered until the returned function is called.
+// `holdSave()` keeps both POSTs (workouts and exercises) unanswered until the returned function
+// is called.
+// `exercises` is the server's list: POST /exercises adds to it (ids from 100), with the real
+// route's 409 for a name already in it, ignoring case. A test can also push to it directly, as if
+// the exercise was created on another phone after the app loaded its list.
 function fakeServer() {
   const saved: CreateWorkoutBody[] = [];
+  const exercises: Exercise[] = [...EXERCISES];
+  const createdExercises: CreateExerciseBody[] = [];
   let gate: Promise<void> | null = null;
 
   function workout(): WorkoutDetail | null {
@@ -49,7 +55,7 @@ function fakeServer() {
       sets: body.sets.map((s, i) => ({
         id: 70 + i,
         exercise_id: s.exercise_id,
-        exercise_name: EXERCISES.find((e) => e.id === s.exercise_id)?.name ?? '?',
+        exercise_name: exercises.find((e) => e.id === s.exercise_id)?.name ?? '?',
         set_number: s.set_number,
         reps: s.reps,
         weight: s.weight,
@@ -63,7 +69,20 @@ function fakeServer() {
       const w = workout();
       return jsonResponse(200, w ? [w] : []);
     },
-    'GET /exercises': () => jsonResponse(200, EXERCISES),
+    'GET /exercises': () => jsonResponse(200, exercises),
+    'POST /exercises': async ({ body }) => {
+      await gate;
+      // `as`: trusted like the POST /workouts body below.
+      const created = body as CreateExerciseBody;
+      createdExercises.push(created);
+      const name = created.name.trim();
+      if (exercises.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+        return jsonResponse(409, { error: `An exercise named "${name}" already exists` });
+      }
+      const exercise: Exercise = { id: 100 + exercises.length, name, muscle_group: null, created_by: 1 };
+      exercises.push(exercise);
+      return jsonResponse(201, exercise);
+    },
     'POST /workouts': async ({ body }) => {
       await gate;
       // `as`: the fake trusts the app's body; the tests check it exactly through `saved`.
@@ -84,7 +103,7 @@ function fakeServer() {
     };
   }
 
-  return { saved, fetchMock, holdSave };
+  return { saved, exercises, createdExercises, fetchMock, holdSave };
 }
 
 beforeEach(async () => {
@@ -273,4 +292,112 @@ it('saves the day picked in the date picker', async () => {
 
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]?.date).toBe('2026-10-11');
+});
+
+describe('creating an exercise from the picker', () => {
+  // Opens the picker and types into its search box once the list has loaded.
+  async function search(text: string) {
+    await fireEvent.press(screen.getByRole('button', { name: 'Add exercise' }));
+    await screen.findByRole('button', { name: 'Squat' });
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), text);
+  }
+
+  it('offers Create "<search>" at the top, then creates the exercise and adds it', async () => {
+    const { saved, createdExercises } = fakeServer();
+    await openLogScreen();
+
+    // A partial match still offers Create, above the matching exercises.
+    await search('squ');
+    const labels = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel);
+    expect(labels.indexOf('Create "squ"')).toBeGreaterThan(-1);
+    expect(labels.indexOf('Create "squ"')).toBeLessThan(labels.indexOf('Squat'));
+
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), ' Cable Fly ');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+
+    // Picked straight away: the picker closes and the card is there to fill in.
+    await screen.findByTestId('Cable Fly card');
+    expect(screen.queryByLabelText('Search exercises')).not.toBeOnTheScreen();
+    expect(createdExercises).toEqual([{ name: 'Cable Fly' }]);
+
+    await fillSet('Cable Fly', 1, '12', '30');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]?.sets).toEqual([
+      { exercise_id: 103, set_number: 1, reps: 12, weight: 30, unit: 'lb' },
+    ]);
+  });
+
+  it('offers no Create for the exact name of an exercise, ignoring case', async () => {
+    fakeServer();
+    await openLogScreen();
+
+    await search('bench PRESS ');
+
+    expect(screen.getByRole('button', { name: 'Bench Press' })).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /^Create/ })).not.toBeOnTheScreen();
+  });
+
+  it("shows the server's error for a duplicate name and offers the existing exercise", async () => {
+    const { exercises } = fakeServer();
+    await openLogScreen();
+    await search('');
+    // Created elsewhere after the app loaded its list, so the app still offers Create.
+    exercises.push({ id: 50, name: 'Cable Fly', muscle_group: 'Chest', created_by: 1 });
+
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'cable fly');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "cable fly"' }));
+
+    // The picker stays open with the server's message, and the refreshed list has the real one.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'An exercise named "cable fly" already exists'
+    );
+    await fireEvent.press(await screen.findByRole('button', { name: 'Cable Fly' }));
+    await screen.findByTestId('Cable Fly card');
+  });
+
+  it('clears the error once the search text changes', async () => {
+    const { exercises } = fakeServer();
+    await openLogScreen();
+    await search('');
+    exercises.push({ id: 50, name: 'Cable Fly', muscle_group: null, created_by: 1 });
+
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+    await screen.findByRole('alert');
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Flye');
+
+    expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
+  });
+
+  it('lists the new exercise the next time the picker opens', async () => {
+    const { fetchMock } = fakeServer();
+    await openLogScreen();
+    await search('Cable Fly');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+    await screen.findByTestId('Cable Fly card');
+    // Removed from this workout, so the picker offers it again.
+    await fireEvent.press(screen.getByRole('button', { name: 'Remove Cable Fly' }));
+
+    await search('cable');
+
+    expect(await screen.findByRole('button', { name: 'Cable Fly' })).toBeOnTheScreen();
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
+    expect(screen.queryByRole('button', { name: /^Create/ })).not.toBeOnTheScreen();
+    expect(requestsMade(fetchMock).filter((r) => r === 'POST /exercises')).toHaveLength(1);
+  });
+
+  it('creates the exercise once on a double tap', async () => {
+    const { createdExercises, holdSave } = fakeServer();
+    await openLogScreen();
+    await search('Cable Fly');
+
+    // Held, so the picker is still open for the second tap, as on a slow network.
+    const release = holdSave();
+    await doubleTap(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+    release();
+
+    await screen.findByTestId('Cable Fly card');
+    expect(createdExercises).toHaveLength(1);
+  });
 });

@@ -22,3 +22,16 @@ export function searchExercises(
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   );
 }
+
+// The name to offer as 'Create "<name>"' for a search, or null when there's nothing to create: the
+// search is blank, or an exercise already has exactly that name (ignoring case and surrounding
+// spaces, like the server's duplicate check, so the offer never leads to a certain 409).
+// Checks every exercise, including excluded ones: one already in the workout still has the name.
+export function createExerciseName(exercises: readonly Exercise[], query: string): string | null {
+  const name = query.trim();
+  const lower = name.toLowerCase();
+  if (name === '' || exercises.some((e) => e.name.toLowerCase() === lower)) {
+    return null;
+  }
+  return name;
+}

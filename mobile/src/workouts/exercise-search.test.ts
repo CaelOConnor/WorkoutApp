@@ -1,6 +1,6 @@
 import type { Exercise } from '@shared/models';
 
-import { searchExercises } from './exercise-search';
+import { createExerciseName, searchExercises } from './exercise-search';
 
 function exercise(id: number, name: string, muscle_group: string | null = null): Exercise {
   return { id, name, muscle_group, created_by: null };
@@ -33,5 +33,24 @@ describe('searchExercises', () => {
 
   it('leaves out the excluded ids (exercises already in the workout)', () => {
     expect(searchExercises(ALL, 'squat', [1]).map((e) => e.id)).toEqual([3]);
+  });
+});
+
+describe('createExerciseName', () => {
+  it('offers the trimmed search text when no exercise has that name', () => {
+    expect(createExerciseName(ALL, '  Cable Fly ')).toBe('Cable Fly');
+  });
+
+  it('offers a name that only partly matches an existing one', () => {
+    expect(createExerciseName(ALL, 'Squa')).toBe('Squa');
+  });
+
+  it('offers nothing for an exact name, ignoring case and surrounding spaces', () => {
+    expect(createExerciseName(ALL, ' front SQUAT ')).toBeNull();
+  });
+
+  it('offers nothing for an empty or blank search', () => {
+    expect(createExerciseName(ALL, '')).toBeNull();
+    expect(createExerciseName(ALL, '   ')).toBeNull();
   });
 });

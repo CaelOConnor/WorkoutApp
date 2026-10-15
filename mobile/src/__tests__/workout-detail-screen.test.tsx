@@ -2,6 +2,7 @@
 // signed in, with a fake backend that remembers changes.
 import type {
   AddSetBody,
+  CreateExerciseBody,
   Exercise,
   UpdateWorkoutBody,
   WorkoutDetail,
@@ -58,6 +59,8 @@ function fakeServer() {
     workout: initialWorkout(),
     bodies: [],
   };
+  // The server's exercise list; POST /exercises adds to it.
+  const exercises: Exercise[] = [...EXERCISES];
   // While set, every write waits for it before answering, like a slow network: the app sees the
   // request as in flight until the test calls the release function holdWrites() returned.
   let writesGate: Promise<void> | null = null;
@@ -90,7 +93,14 @@ function fakeServer() {
   const routes: MockRoutes = {
     'GET /workouts': () => jsonResponse(200, state.workout ? [state.workout] : []),
     'GET /workouts/3': () => (state.workout ? jsonResponse(200, state.workout) : notFound()),
-    'GET /exercises': () => jsonResponse(200, EXERCISES),
+    'GET /exercises': () => jsonResponse(200, exercises),
+    'POST /exercises': write(({ body }) => {
+      state.bodies.push(body);
+      const { name } = body as CreateExerciseBody;
+      const exercise: Exercise = { id: 100, name, muscle_group: null, created_by: 1 };
+      exercises.push(exercise);
+      return jsonResponse(201, exercise);
+    }),
     'PATCH /workouts/3': write(({ body }) => {
       state.bodies.push(body);
       // `as` (a type assertion, not a check): the fake trusts the app's bodies, and the tests
@@ -107,7 +117,7 @@ function fakeServer() {
       const { exercise_id, reps, weight, unit } = body as AddSetBody;
       if (!state.workout) return notFound();
       save((w) => {
-        const name = EXERCISES.find((e) => e.id === exercise_id)?.name ?? '?';
+        const name = exercises.find((e) => e.id === exercise_id)?.name ?? '?';
         const added: WorkoutDetailSet = {
           id: 99,
           exercise_id,
@@ -483,6 +493,28 @@ describe('+ Add exercise', () => {
 
     await waitFor(() => expect(app.getPathname()).toBe('/workouts/3'));
     expect(within(await screen.findByTestId('Deadlift card')).getByText('Set 1 · 5 reps × 315 lb')).toBeOnTheScreen();
+  });
+
+  it('creates a new exercise from the search, then adds its first set like a picked one', async () => {
+    const { state } = fakeServer();
+    const app = await renderApp('/workouts/3');
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Add exercise' }));
+    await screen.findByRole('button', { name: 'Deadlift' });
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
+    const create = screen.getByRole('button', { name: 'Create "Cable Fly"' });
+    // The picker closes only once the exercise exists, so wait for that before it's dismissed.
+    await closePicker(async () => {
+      await fireEvent.press(create);
+      await waitFor(() => expect(screen.queryByLabelText('Search exercises')).not.toBeOnTheScreen());
+    });
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/sets/99'));
+    expect(state.bodies).toEqual([
+      { name: 'Cable Fly' },
+      { exercise_id: 100, reps: 0, weight: 0, unit: 'lb' },
+    ]);
+    expect(await screen.findByText('Cable Fly · Set 1')).toBeOnTheScreen();
   });
 
   it('adds nothing when the picker is cancelled', async () => {
