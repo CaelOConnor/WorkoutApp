@@ -12,16 +12,8 @@ import { jsonResponse, mockApi, requestsMade } from '@/test-utils/mock-api';
 
 jest.mock('@/api/config', () => ({ getApiUrl: () => 'http://api.test' }));
 jest.mock('expo-secure-store');
-// The native date picker can't render in Jest: on iOS (Jest's platform) DateField uses SwiftUI
-// views through @expo/ui. These stand-ins are plain Views that keep every prop, so a test could
-// fire the picker's onDateChange. jest.mock factories run before the imports, so they load what
-// they need with jest.requireActual; the type argument gives the result the module's real type.
-jest.mock('@expo/ui/swift-ui', () => {
-  const { createElement } = jest.requireActual<typeof import('react')>('react');
-  const { View } = jest.requireActual<typeof import('react-native')>('react-native');
-  const PassThrough = (props: object) => createElement(View, props);
-  return { __esModule: true, Host: PassThrough, DatePicker: PassThrough };
-});
+// DateField's native picker is replaced by plain Views in jest.setup.tsx, so a test can fire its
+// onDateChange.
 
 // 05:30 UTC on Wednesday 14 October is 22:30 on Tuesday the 13th in Los Angeles, the zone Jest
 // runs in (jest.global-setup.js). The phone's "today" is the 13th; UTC's would be the 14th.
