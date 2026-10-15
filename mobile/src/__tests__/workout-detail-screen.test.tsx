@@ -96,8 +96,8 @@ function fakeServer() {
     'GET /exercises': () => jsonResponse(200, exercises),
     'POST /exercises': write(({ body }) => {
       state.bodies.push(body);
-      const { name } = body as CreateExerciseBody;
-      const exercise: Exercise = { id: 100, name, muscle_group: null, created_by: 1 };
+      const { name, muscle_group } = body as CreateExerciseBody;
+      const exercise: Exercise = { id: 100, name, muscle_group: muscle_group ?? null, created_by: 1 };
       exercises.push(exercise);
       return jsonResponse(201, exercise);
     }),
@@ -495,14 +495,16 @@ describe('+ Add exercise', () => {
     expect(within(await screen.findByTestId('Deadlift card')).getByText('Set 1 · 5 reps × 315 lb')).toBeOnTheScreen();
   });
 
-  it('creates a new exercise from the search, then adds its first set like a picked one', async () => {
+  it('creates a new exercise from the search form, then adds its first set like a picked one', async () => {
     const { state } = fakeServer();
     const app = await renderApp('/workouts/3');
 
     await fireEvent.press(await screen.findByRole('button', { name: 'Add exercise' }));
     await screen.findByRole('button', { name: 'Deadlift' });
     await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
-    const create = screen.getByRole('button', { name: 'Create "Cable Fly"' });
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+    await fireEvent.press(await screen.findByRole('radio', { name: 'Chest' }));
+    const create = screen.getByRole('button', { name: 'Create' });
     // The picker closes only once the exercise exists, so wait for that before it's dismissed.
     await closePicker(async () => {
       await fireEvent.press(create);
@@ -511,7 +513,7 @@ describe('+ Add exercise', () => {
 
     await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/sets/99'));
     expect(state.bodies).toEqual([
-      { name: 'Cable Fly' },
+      { name: 'Cable Fly', muscle_group: 'Chest' },
       { exercise_id: 100, reps: 0, weight: 0, unit: 'lb' },
     ]);
     expect(await screen.findByText('Cable Fly · Set 1')).toBeOnTheScreen();

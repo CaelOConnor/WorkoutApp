@@ -79,7 +79,12 @@ function fakeServer() {
       if (exercises.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
         return jsonResponse(409, { error: `An exercise named "${name}" already exists` });
       }
-      const exercise: Exercise = { id: 100 + exercises.length, name, muscle_group: null, created_by: 1 };
+      const exercise: Exercise = {
+        id: 100 + exercises.length,
+        name,
+        muscle_group: created.muscle_group?.trim() || null,
+        created_by: 1,
+      };
       exercises.push(exercise);
       return jsonResponse(201, exercise);
     },
@@ -302,30 +307,22 @@ describe('creating an exercise from the picker', () => {
     await fireEvent.changeText(screen.getByLabelText('Search exercises'), text);
   }
 
-  it('offers Create "<search>" at the top, then creates the exercise and adds it', async () => {
-    const { saved, createdExercises } = fakeServer();
+  // Searches, then opens the new-exercise form from the Create row.
+  async function openCreateForm(text: string, name = text.trim()) {
+    await search(text);
+    await fireEvent.press(screen.getByRole('button', { name: `Create "${name}"` }));
+    await screen.findByRole('header', { name: 'New exercise' });
+  }
+
+  it('offers Create "<search>" at the top of the list, above partial matches', async () => {
+    fakeServer();
     await openLogScreen();
 
-    // A partial match still offers Create, above the matching exercises.
     await search('squ');
+
     const labels = screen.getAllByRole('button').map((b) => b.props.accessibilityLabel);
     expect(labels.indexOf('Create "squ"')).toBeGreaterThan(-1);
     expect(labels.indexOf('Create "squ"')).toBeLessThan(labels.indexOf('Squat'));
-
-    await fireEvent.changeText(screen.getByLabelText('Search exercises'), ' Cable Fly ');
-    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
-
-    // Picked straight away: the picker closes and the card is there to fill in.
-    await screen.findByTestId('Cable Fly card');
-    expect(screen.queryByLabelText('Search exercises')).not.toBeOnTheScreen();
-    expect(createdExercises).toEqual([{ name: 'Cable Fly' }]);
-
-    await fillSet('Cable Fly', 1, '12', '30');
-    await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
-    await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]?.sets).toEqual([
-      { exercise_id: 103, set_number: 1, reps: 12, weight: 30, unit: 'lb' },
-    ]);
   });
 
   it('offers no Create for the exact name of an exercise, ignoring case', async () => {
@@ -338,63 +335,171 @@ describe('creating an exercise from the picker', () => {
     expect(screen.queryByRole('button', { name: /^Create/ })).not.toBeOnTheScreen();
   });
 
-  it("shows the server's error for a duplicate name and offers the existing exercise", async () => {
+  it('opens a form with the name filled in and the existing muscle groups to choose from', async () => {
+    const { createdExercises } = fakeServer();
+    await openLogScreen();
+
+    await openCreateForm(' Cable Fly ');
+
+    expect(screen.getByLabelText('Name')).toHaveDisplayValue('Cable Fly');
+    expect(screen.getByLabelText('Muscle group')).toHaveDisplayValue('');
+    const choices = within(screen.getByLabelText('Muscle group choices'));
+    expect(choices.getAllByRole('radio').map((r) => r.props.accessibilityLabel)).toEqual([
+      'Back',
+      'Chest',
+      'Legs',
+    ]);
+    // Nothing is created until the form's Create is pressed.
+    expect(createdExercises).toEqual([]);
+  });
+
+  it('creates the exercise with a chosen muscle group and adds it to the workout', async () => {
+    const { saved, createdExercises } = fakeServer();
+    await openLogScreen();
+    await openCreateForm('Cable Fly');
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Chest' }));
+    expect(screen.getByLabelText('Muscle group')).toHaveDisplayValue('Chest');
+    expect(screen.getByRole('radio', { name: 'Chest' })).toBeChecked();
+    await fireEvent.press(screen.getByRole('button', { name: 'Create' }));
+
+    // Picked straight away: the picker closes and the card is there to fill in.
+    await screen.findByTestId('Cable Fly card');
+    expect(screen.queryByLabelText('Search exercises')).not.toBeOnTheScreen();
+    expect(createdExercises).toEqual([{ name: 'Cable Fly', muscle_group: 'Chest' }]);
+
+    await fillSet('Cable Fly', 1, '12', '30');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]?.sets).toEqual([
+      { exercise_id: 103, set_number: 1, reps: 12, weight: 30, unit: 'lb' },
+    ]);
+  });
+
+  it('takes an edited name and a new muscle group typed in, both trimmed', async () => {
+    const { createdExercises } = fakeServer();
+    await openLogScreen();
+    await openCreateForm('wrist');
+
+    await fireEvent.changeText(screen.getByLabelText('Name'), ' Wrist Curl ');
+    await fireEvent.changeText(screen.getByLabelText('Muscle group'), ' Forearms ');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create' }));
+
+    await screen.findByTestId('Wrist Curl card');
+    expect(createdExercises).toEqual([{ name: 'Wrist Curl', muscle_group: 'Forearms' }]);
+  });
+
+  it('sends no muscle group when none is given, and a second tap on a choice clears it', async () => {
+    const { createdExercises } = fakeServer();
+    await openLogScreen();
+    await openCreateForm('Cable Fly');
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Chest' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Chest' }));
+    expect(screen.getByLabelText('Muscle group')).toHaveDisplayValue('');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create' }));
+
+    await screen.findByTestId('Cable Fly card');
+    expect(createdExercises).toEqual([{ name: 'Cable Fly', muscle_group: null }]);
+  });
+
+  it('disables Create while the name is blank', async () => {
+    fakeServer();
+    await openLogScreen();
+    await openCreateForm('Cable Fly');
+
+    await fireEvent.changeText(screen.getByLabelText('Name'), '   ');
+
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+  });
+
+  it('goes back to the list with the search kept, creating nothing', async () => {
+    const { createdExercises } = fakeServer();
+    await openLogScreen();
+    await openCreateForm('squ');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+
+    expect(screen.getByLabelText('Search exercises')).toHaveDisplayValue('squ');
+    expect(screen.getByRole('button', { name: 'Squat' })).toBeOnTheScreen();
+    expect(createdExercises).toEqual([]);
+  });
+
+  it("shows the server's error for a duplicate name, and the existing exercise back in the list", async () => {
     const { exercises } = fakeServer();
     await openLogScreen();
     await search('');
     // Created elsewhere after the app loaded its list, so the app still offers Create.
     exercises.push({ id: 50, name: 'Cable Fly', muscle_group: 'Chest', created_by: 1 });
-
     await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'cable fly');
     await fireEvent.press(screen.getByRole('button', { name: 'Create "cable fly"' }));
 
-    // The picker stays open with the server's message, and the refreshed list has the real one.
+    await fireEvent.press(await screen.findByRole('button', { name: 'Create' }));
+
+    // The form stays open with the server's message.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'An exercise named "cable fly" already exists'
     );
+    expect(screen.getByLabelText('Name')).toHaveDisplayValue('cable fly');
+    // The 409 refreshed the list, so back in it the real one is there to pick.
+    await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Cable Fly' }));
     await screen.findByTestId('Cable Fly card');
   });
 
-  it('clears the error once the search text changes', async () => {
+  it('clears the error once the name or muscle group changes', async () => {
     const { exercises } = fakeServer();
     await openLogScreen();
     await search('');
     exercises.push({ id: 50, name: 'Cable Fly', muscle_group: null, created_by: 1 });
-
     await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
     await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
-    await screen.findByRole('alert');
-    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Flye');
+    const create = await screen.findByRole('button', { name: 'Create' });
 
+    await fireEvent.press(create);
+    await screen.findByRole('alert');
+    await fireEvent.changeText(screen.getByLabelText('Name'), 'Cable Flye');
+    expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
+
+    // Back to the duplicate, to get the error again.
+    await fireEvent.changeText(screen.getByLabelText('Name'), 'Cable Fly');
+    await fireEvent.press(create);
+    await screen.findByRole('alert');
+    await fireEvent.changeText(screen.getByLabelText('Muscle group'), 'Chest');
     expect(screen.queryByRole('alert')).not.toBeOnTheScreen();
   });
 
-  it('lists the new exercise the next time the picker opens', async () => {
+  it('lists the new exercise with its muscle group the next time the picker opens', async () => {
     const { fetchMock } = fakeServer();
     await openLogScreen();
-    await search('Cable Fly');
-    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
-    await screen.findByTestId('Cable Fly card');
+    await openCreateForm('Wrist Curl');
+    await fireEvent.changeText(screen.getByLabelText('Muscle group'), 'Forearms');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create' }));
+    await screen.findByTestId('Wrist Curl card');
     // Removed from this workout, so the picker offers it again.
-    await fireEvent.press(screen.getByRole('button', { name: 'Remove Cable Fly' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Remove Wrist Curl' }));
 
-    await search('cable');
+    await search('wrist');
 
-    expect(await screen.findByRole('button', { name: 'Cable Fly' })).toBeOnTheScreen();
-    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
+    const item = await screen.findByRole('button', { name: 'Wrist Curl' });
+    expect(within(item).getByText('Forearms')).toBeOnTheScreen();
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Wrist Curl');
     expect(screen.queryByRole('button', { name: /^Create/ })).not.toBeOnTheScreen();
     expect(requestsMade(fetchMock).filter((r) => r === 'POST /exercises')).toHaveLength(1);
+    // Its new muscle group is now one of the choices for the next exercise.
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Hammer Curl');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Hammer Curl"' }));
+    expect(await screen.findByRole('radio', { name: 'Forearms' })).toBeOnTheScreen();
   });
 
   it('creates the exercise once on a double tap', async () => {
     const { createdExercises, holdSave } = fakeServer();
     await openLogScreen();
-    await search('Cable Fly');
+    await openCreateForm('Cable Fly');
 
-    // Held, so the picker is still open for the second tap, as on a slow network.
+    // Held, so the form is still open for the second tap, as on a slow network.
     const release = holdSave();
-    await doubleTap(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+    await doubleTap(screen.getByRole('button', { name: 'Create' }));
     release();
 
     await screen.findByTestId('Cable Fly card');

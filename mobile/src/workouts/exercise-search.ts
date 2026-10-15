@@ -35,3 +35,18 @@ export function createExerciseName(exercises: readonly Exercise[], query: string
   }
   return name;
 }
+
+// The muscle groups the exercises use, each once, sorted ignoring case: the quick choices when
+// creating an exercise. Spellings that differ only in case or surrounding spaces ('Legs', ' legs')
+// count as one, shown the first way they appear. A Map keyed by the lowercase spelling does that:
+// set() is skipped for a key that's already there, so the first spelling stays.
+export function muscleGroups(exercises: readonly Exercise[]): string[] {
+  const groups = new Map<string, string>();
+  for (const { muscle_group } of exercises) {
+    const group = muscle_group?.trim();
+    if (group && !groups.has(group.toLowerCase())) {
+      groups.set(group.toLowerCase(), group);
+    }
+  }
+  return [...groups.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}

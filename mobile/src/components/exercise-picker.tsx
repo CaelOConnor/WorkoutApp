@@ -1,19 +1,18 @@
 import type { Exercise } from '@shared/models';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { errorMessage } from '@/api/error-message';
+import { CreateExerciseForm } from '@/components/create-exercise-form';
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
 import { TextButton } from '@/components/text-button';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { usePressGuard } from '@/hooks/use-press-guard';
 import { useTheme } from '@/hooks/use-theme';
-import { createExerciseName, searchExercises } from '@/workouts/exercise-search';
-import { useCreateExercise, useExercises } from '@/workouts/use-exercises';
+import { createExerciseName, muscleGroups, searchExercises } from '@/workouts/exercise-search';
+import { useExercises } from '@/workouts/use-exercises';
 
 export interface ExercisePickerProps {
   visible: boolean;
@@ -29,8 +28,9 @@ export interface ExercisePickerProps {
 }
 
 // Choose one exercise from GET /exercises, with a search box. When the search isn't exactly the
-// name of an exercise, 'Create "<search>"' at the top of the list creates it (POST /exercises) and
-// picks it. Self-contained (it loads and creates its own data) and shown in a Modal, so any screen
+// name of an exercise, 'Create "<search>"' at the top of the list opens a small form (name and
+// muscle group) in the same Modal, which creates the exercise and picks it. A view inside the
+// Modal rather than a separate screen, since iOS can't present a screen over an open Modal. Self-contained (it loads and creates its own data) and shown in a Modal, so any screen
 // can use it: logging a new workout, and adding an exercise to an existing one.
 export function ExercisePicker({
   visible,
@@ -77,27 +77,10 @@ type PickerContentProps = Required<Omit<ExercisePickerProps, 'visible' | 'onClos
 function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
   const theme = useTheme();
   const exercises = useExercises();
-  const createExercise = useCreateExercise();
-  // Stops a double tap on Create from sending two requests (see use-press-guard.ts).
-  const guard = usePressGuard();
   const [query, setQuery] = useState('');
-
-  function changeQuery(text: string) {
-    setQuery(text);
-    // The error was about the old text (e.g. a duplicate name), so it goes once the text changes.
-    createExercise.reset();
-  }
-
-  function create(name: string) {
-    void guard.run(async () => {
-      try {
-        // mutateAsync resolves with the new exercise (or rejects), unlike mutate, which only
-        // reports through callbacks. The rejection is caught here because createExercise.error
-        // already holds it for the message below; the catch just stops it being unhandled.
-        onPick(await createExercise.mutateAsync({ name }));
-      } catch {}
-    });
-  }
+  // The name the "New exercise" form starts with while it's showing, else null (the list). The
+  // query stays in state underneath, so Back returns to the same search.
+  const [newExerciseName, setNewExerciseName] = useState<string | null>(null);
 
   function results() {
     if (!exercises.data) {
@@ -128,16 +111,12 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Create "${newName}"`}
-              accessibilityState={{ busy: createExercise.isPending }}
-              disabled={createExercise.isPending}
-              onPress={() => create(newName)}
+              onPress={() => setNewExerciseName(newName)}
               style={({ pressed }) => [
                 styles.item,
-                styles.createItem,
                 pressed && { backgroundColor: theme.backgroundSelected },
               ]}>
               <ThemedText type="smallBold">{`Create "${newName}"`}</ThemedText>
-              {createExercise.isPending ? <ActivityIndicator /> : null}
             </Pressable>
           )
         }
@@ -162,6 +141,28 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
     );
   }
 
+  if (newExerciseName !== null) {
+    return (
+      <ThemedView style={styles.screen}>
+        <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+          <View style={styles.header}>
+            <ThemedText type="smallBold" accessibilityRole="header" style={styles.title}>
+              New exercise
+            </ThemedText>
+            <TextButton label="Back" onPress={() => setNewExerciseName(null)} />
+          </View>
+          <CreateExerciseForm
+            initialName={newExerciseName}
+            // The form only opens from the loaded list, so data is there; `?? []` satisfies the
+            // type (data is `Exercise[] | undefined` to TypeScript).
+            muscleGroups={muscleGroups(exercises.data ?? [])}
+            onCreated={onPick}
+          />
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.screen}>
       <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -176,20 +177,11 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
             label="Search exercises"
             placeholder="Name or muscle group"
             value={query}
-            onChangeText={changeQuery}
+            onChangeText={setQuery}
             autoCorrect={false}
             autoCapitalize="none"
             clearButtonMode="while-editing"
           />
-          {createExercise.isError ? (
-            <ThemedText
-              type="small"
-              themeColor="danger"
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite">
-              {errorMessage(createExercise.error)}
-            </ThemedText>
-          ) : null}
         </View>
         {results()}
       </SafeAreaView>
@@ -206,7 +198,6 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
   },
   title: { fontSize: 18 },
-  search: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, gap: Spacing.two },
+  search: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
   item: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.three, gap: Spacing.half },
-  createItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 });

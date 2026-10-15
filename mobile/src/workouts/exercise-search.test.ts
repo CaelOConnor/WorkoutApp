@@ -1,6 +1,6 @@
 import type { Exercise } from '@shared/models';
 
-import { createExerciseName, searchExercises } from './exercise-search';
+import { createExerciseName, muscleGroups, searchExercises } from './exercise-search';
 
 function exercise(id: number, name: string, muscle_group: string | null = null): Exercise {
   return { id, name, muscle_group, created_by: null };
@@ -52,5 +52,23 @@ describe('createExerciseName', () => {
   it('offers nothing for an empty or blank search', () => {
     expect(createExerciseName(ALL, '')).toBeNull();
     expect(createExerciseName(ALL, '   ')).toBeNull();
+  });
+});
+
+describe('muscleGroups', () => {
+  it('lists each muscle group once, sorted ignoring case, skipping exercises without one', () => {
+    const exercises = [...ALL, exercise(5, 'Curl', 'arms'), exercise(6, 'Plank')];
+
+    expect(muscleGroups(exercises)).toEqual(['arms', 'Back', 'Chest', 'Legs']);
+  });
+
+  it('treats spellings that differ only in case or spaces as one group, keeping the first', () => {
+    const exercises = [
+      exercise(1, 'Squat', 'Legs'),
+      exercise(2, 'Lunge', ' legs '),
+      exercise(3, 'Curl', '   '),
+    ];
+
+    expect(muscleGroups(exercises)).toEqual(['Legs']);
   });
 });
