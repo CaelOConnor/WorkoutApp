@@ -248,8 +248,9 @@ describe('GET /exercises/logged', () => {
     await logDay(lifter.id, '2026-09-03', squat, [[3, 50, 'kg']]);
     // Only a 0-rep set: nothing to chart, so not listed.
     await logDay(lifter.id, '2026-09-04', curl, [[0, 0, 'lb']]);
-    // Another user's custom exercise isn't the caller's to chart, even if they logged it.
-    await logDay(lifter.id, '2026-09-04', theirs, [[5, 20, 'lb']]);
+    // Another user's custom exercise, logged by them. (The lifter can't log it: the
+    // sets_exercise_visible trigger rejects that, see workouts.test.ts.)
+    await logDay(other.id, '2026-09-04', theirs, [[5, 20, 'lb']]);
     // Another user's newer Bench set changes neither Bench's date nor its unit.
     await logDay(other.id, '2026-09-05', bench, [[5, 100, 'lb']]);
 

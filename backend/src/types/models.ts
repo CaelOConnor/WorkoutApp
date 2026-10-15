@@ -90,6 +90,13 @@ export interface ProgressQuery {
   to?: string; // 'YYYY-MM-DD', inclusive
 }
 
+// POST /exercises: a custom exercise for the caller. Both are trimmed by the server; a missing,
+// null or blank muscle_group is stored as null.
+export interface CreateExerciseBody {
+  name: string;
+  muscle_group?: string | null;
+}
+
 export interface AuthBody {
   email: string;
   password: string;

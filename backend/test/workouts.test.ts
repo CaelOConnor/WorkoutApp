@@ -115,6 +115,32 @@ describe('POST /workouts with a valid token', () => {
     expect(sets.rows).toEqual([]);
   });
 
+  // Another user's custom exercise gets the same 400 as a missing one, so its id reveals nothing.
+  it("returns 400 and saves nothing for another user's custom exercise", async () => {
+    const other = await createUser('other@example.com', 'password');
+    const theirs = await createExercise('Their Lunge', other.id);
+
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: theirs.id, set_number: 1, reps: 5, weight: 50 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
+    expect((await pool.query('SELECT id FROM sets')).rows).toEqual([]);
+  });
+
+  it("saves a set of the caller's own custom exercise", async () => {
+    const mine = await createExercise('My Lunge', lifter.id);
+
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: mine.id, set_number: 1, reps: 5, weight: 50 }] });
+
+    expect(res.status).toBe(201);
+  });
+
   // JSON.stringify in the title makes ' 2026-10-07' show its leading space in the output.
   it.each(INVALID_DATES)('returns 400 and saves nothing for date %j', async (date) => {
     const res = await request(app)
@@ -725,6 +751,31 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     expect(await readSet(set.id)).toEqual(original);
   });
 
+  it("returns 400 and changes nothing for another user's custom exercise", async () => {
+    const theirs = await createExercise('Their Lunge', intruder.id);
+
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: theirs.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
+    expect(await readSet(set.id)).toEqual(original);
+  });
+
+  it("switches a set to the caller's own custom exercise", async () => {
+    const mine = await createExercise('My Lunge', lifter.id);
+
+    const res = await request(app)
+      .patch(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: mine.id });
+
+    expect(res.status).toBe(200);
+    expect(await readSet(set.id)).toEqual({ ...original, exercise_id: mine.id });
+  });
+
   // The 404 cases below all give the same response, so a caller can't tell which rule failed,
   // and each one leaves the set as it was.
   it("returns 404 when another user sends the set id under their own workout's id", async () => {
@@ -1117,6 +1168,31 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
     expect(await setIdsOf(workout.id)).toHaveLength(1);
+  });
+
+  it("returns 400 and saves nothing for another user's custom exercise", async () => {
+    const theirs = await createExercise('Their Lunge', intruder.id);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: theirs.id, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
+    expect(await setIdsOf(workout.id)).toHaveLength(1);
+  });
+
+  it("adds a set of the caller's own custom exercise", async () => {
+    const mine = await createExercise('My Lunge', lifter.id);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: mine.id, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(201);
+    expect(await setIdsOf(workout.id)).toHaveLength(2);
   });
 
   // The 404s below give the same response, so a caller can't tell whether the workout exists.

@@ -17,7 +17,7 @@ export async function seed(): Promise<void> {
   );
 
   for (const [name, muscleGroup] of exercises) {
-    // A rerun hits the exercises_created_by_name_key unique index and skips the row.
+    // A rerun hits the exercises_created_by_lower_name_key unique index and skips the row.
     await pool.query(
       'INSERT INTO exercises (name, muscle_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [name, muscleGroup]

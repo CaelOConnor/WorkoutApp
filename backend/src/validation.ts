@@ -8,6 +8,7 @@
 import type {
   AddSetBody,
   AuthBody,
+  CreateExerciseBody,
   CreateWorkoutBody,
   NewSetInput,
   ProgressQuery,
@@ -205,6 +206,50 @@ export function isProgressQuery(value: unknown): value is ProgressQuery {
     // 'YYYY-MM-DD' strings sort in date order, so comparing the strings compares the days.
     !(typeof value.from === 'string' && typeof value.to === 'string' && value.from > value.to)
   );
+}
+
+// Column limits from the baseline migration: exercises.name VARCHAR(100), muscle_group VARCHAR(50).
+const MAX_EXERCISE_NAME_LENGTH = 100;
+const MAX_MUSCLE_GROUP_LENGTH = 50;
+
+// VARCHAR(n) counts characters (Unicode code points), but a JS string's .length counts UTF-16
+// code units, and characters outside the Basic Multilingual Plane, like most emoji, take two.
+// Spreading a string iterates it by code point, so this matches what Postgres counts.
+function characterCount(value: string): number {
+  return [...value].length;
+}
+
+const CREATE_EXERCISE_KEYS = ['name', 'muscle_group'];
+
+// unknown -> CreateExerciseBody with both fields trimmed and a blank muscle_group as null, or null
+// if the body is invalid. Like parseId, this returns a new value rather than being a `value is X`
+// guard, because a guard can't hand back the trimmed strings. The return type is Required<...>
+// so callers get muscle_group as `string | null`, never undefined.
+// Lengths are checked after trimming, since the trimmed name is what gets stored.
+export function parseCreateExerciseBody(value: unknown): Required<CreateExerciseBody> | null {
+  if (!isRecord(value) || !Object.keys(value).every((key) => CREATE_EXERCISE_KEYS.includes(key))) {
+    return null;
+  }
+  if (typeof value.name !== 'string') {
+    return null;
+  }
+  const name = value.name.trim();
+  if (name.length === 0 || characterCount(name) > MAX_EXERCISE_NAME_LENGTH) {
+    return null;
+  }
+  const muscleGroup = value.muscle_group;
+  if (muscleGroup === undefined || muscleGroup === null) {
+    return { name, muscle_group: null };
+  }
+  if (typeof muscleGroup !== 'string') {
+    return null;
+  }
+  const trimmedGroup = muscleGroup.trim();
+  if (characterCount(trimmedGroup) > MAX_MUSCLE_GROUP_LENGTH) {
+    return null;
+  }
+  // `||` (not `??`): an empty string is falsy, so a blank muscle group becomes null.
+  return { name, muscle_group: trimmedGroup || null };
 }
 
 // unknown -> AuthBody

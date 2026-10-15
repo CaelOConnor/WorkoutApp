@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import pool from '../db/pool';
+import { isUniqueViolation } from '../db/errors';
 import {
   findVisibleExercise,
   latestUnit,
@@ -7,24 +8,82 @@ import {
   loadProgressPoints,
 } from '../db/progress';
 import { getAuthUser, requireAuth } from '../middleware/auth';
-import { isProgressQuery, parseId } from '../validation';
+import { isProgressQuery, parseCreateExerciseBody, parseId } from '../validation';
 import type { ErrorResponse, Exercise, ExerciseProgress, LoggedExercise } from '../types/models';
 import type { NoParams } from './types';
 
 // Mounted at /exercises in app.ts, so '/' here is GET /exercises.
 const exercisesRouter = Router();
 
+// Every exercise route depends on who's asking (custom exercises are per user), so auth runs once
+// for the whole router, as in workoutsRouter.
+exercisesRouter.use(requireAuth);
+
+// The exercises the caller can use: the built-in ones (created_by NULL) and their own custom ones.
+// Another user's custom exercises are never listed.
 exercisesRouter.get('/', async (req: Request, res: Response<Exercise[]>) => {
   // The generic tells pg what each row looks like, so result.rows is Exercise[].
-  const result = await pool.query<Exercise>('SELECT * FROM exercises');
+  const result = await pool.query<Exercise>(
+    `SELECT id, name, muscle_group, created_by FROM exercises
+     WHERE created_by IS NULL OR created_by = $1
+     ORDER BY name, id`,
+    [getAuthUser(req).id]
+  );
   res.json(result.rows);
 });
 
-// GET /exercises itself is still public (see ROADMAP.md), so auth is added per route here instead
-// of with exercisesRouter.use(requireAuth). Express runs the handlers in the order they're listed.
+// Creates a custom exercise owned by the caller. 409 if the caller can already see an exercise
+// with that name, ignoring case: one of their own, or a built-in one.
+exercisesRouter.post(
+  '/',
+  async (
+    req: Request<NoParams, Exercise | ErrorResponse, unknown>,
+    res: Response<Exercise | ErrorResponse>
+  ) => {
+    const body = parseCreateExerciseBody(req.body);
+    if (body === null) {
+      // Written for the user, since the app shows it: the name is the field they typed.
+      return res.status(400).json({
+        error: 'Exercise names must be 1 to 100 characters (muscle groups at most 50)',
+      });
+    }
+    const user = getAuthUser(req);
+    const duplicate = { error: `An exercise named "${body.name}" already exists` };
+
+    try {
+      // INSERT ... SELECT ... WHERE NOT EXISTS: one statement that inserts only if no visible
+      // exercise has this name, so there's no gap between a separate check and the insert.
+      // lower() on both sides makes the comparison ignore case, the same way the unique index does.
+      // The casts give each parameter one type: $1 is used twice, and without a FROM table
+      // Postgres can't infer it ("inconsistent types deduced for parameter $1").
+      const result = await pool.query<Exercise>(
+        `INSERT INTO exercises (name, muscle_group, created_by)
+         SELECT $1::text, $2::text, $3::int
+         WHERE NOT EXISTS (
+           SELECT 1 FROM exercises
+           WHERE lower(name) = lower($1) AND (created_by IS NULL OR created_by = $3)
+         )
+         RETURNING id, name, muscle_group, created_by`,
+        [body.name, body.muscle_group, user.id]
+      );
+      const exercise = result.rows[0];
+      if (!exercise) {
+        return res.status(409).json(duplicate);
+      }
+      return res.status(201).json(exercise);
+    } catch (err: unknown) {
+      // Two identical requests at once can both pass NOT EXISTS (neither sees the other's
+      // uncommitted row); the unique index then rejects the second one.
+      if (isUniqueViolation(err, 'exercises_created_by_lower_name_key')) {
+        return res.status(409).json(duplicate);
+      }
+      throw err;
+    }
+  }
+);
+
 exercisesRouter.get(
   '/logged',
-  requireAuth,
   async (req: Request<NoParams>, res: Response<LoggedExercise[]>) => {
     res.json(await listLoggedExercises(getAuthUser(req).id));
   }
@@ -36,7 +95,6 @@ exercisesRouter.get(
 // so TypeScript would keep ParsedQs's value types and query.unit wouldn't become a WeightUnit.
 exercisesRouter.get(
   '/:id/progress',
-  requireAuth,
   async (
     req: Request<{ id: string }>,
     res: Response<ExerciseProgress | ErrorResponse>
