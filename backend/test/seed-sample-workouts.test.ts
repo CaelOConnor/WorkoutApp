@@ -63,6 +63,22 @@ describe('seedSampleWorkouts', () => {
     ]);
   });
 
+  it("numbers each exercise's sets 1..n within every workout, like the API does", async () => {
+    await createUser(EMAIL, 'pw');
+    await seedSampleWorkouts(EMAIL, TODAY);
+
+    // array_agg collects a group's values into one Postgres array (a JS array once pg reads it),
+    // here each exercise's set numbers in one workout, in the order the sets were added.
+    const result = await pool.query<{ numbers: number[] }>(
+      'SELECT array_agg(set_number ORDER BY id) AS numbers FROM sets GROUP BY workout_id, exercise_id'
+    );
+    expect(result.rows.length).toBeGreaterThan(0);
+    for (const { numbers } of result.rows) {
+      // Array.from({ length: n }, fn) builds [fn(_, 0), fn(_, 1), ...], here [1, 2, ..., n].
+      expect(numbers).toEqual(Array.from({ length: numbers.length }, (_, i) => i + 1));
+    }
+  });
+
   it('replaces its own workouts when rerun, leaving the rest alone', async () => {
     const user = await createUser(EMAIL, 'pw');
     const other = await createUser('other@test.com', 'pw');

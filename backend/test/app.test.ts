@@ -23,7 +23,7 @@ describe('POST /workouts', () => {
   it('returns 401 with { error } when no token is sent', async () => {
     const res = await request(app)
       .post('/workouts')
-      .send({ sets: [{ exercise_id: 1, set_number: 1, reps: 5, weight: 135 }] });
+      .send({ sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -42,7 +42,7 @@ describe('POST /workouts', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authorization)
-      .send({ sets: [{ exercise_id: 1, set_number: 1, reps: 5, weight: 135 }] });
+      .send({ sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -53,8 +53,8 @@ describe('POST /workouts', () => {
     ['no body', undefined],
     ['missing sets', { notes: 'leg day' }],
     ['sets is not an array', { sets: 'lots' }],
-    ['set with a string weight', { sets: [{ exercise_id: 1, set_number: 1, reps: 5, weight: '135' }] }],
-    ['set with an unknown unit', { sets: [{ exercise_id: 1, set_number: 1, reps: 5, weight: 135, unit: 'st' }] }],
+    ['set with a string weight', { sets: [{ exercise_id: 1, reps: 5, weight: '135' }] }],
+    ['set with an unknown unit', { sets: [{ exercise_id: 1, reps: 5, weight: 135, unit: 'st' }] }],
   ])('returns 400 with { error } for %s', async (_label, body) => {
     const res = await request(app).post('/workouts').set('Authorization', authHeader(1)).send(body);
 

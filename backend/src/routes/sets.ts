@@ -1,16 +1,22 @@
 import { Router, type Request, type Response } from 'express';
 import pool from '../db/pool';
-import { isOutOfRangeError, isUnknownExerciseError } from '../db/errors';
+import { isUnknownExerciseError } from '../db/errors';
+import { withTransaction } from '../db/transaction';
 import { loadWorkoutDetail } from '../db/workoutDetail';
+import { lockWorkout } from '../db/workoutLock';
 import { getAuthUser } from '../middleware/auth';
-import { isAddSetBody, isUpdateSetBody, parseId, UPDATE_SET_KEYS } from '../validation';
-import type { ErrorResponse, WorkoutDetail } from '../types/models';
+import { isNewSetInput, isUpdateSetBody, parseId, UPDATE_SET_KEYS } from '../validation';
+import type { ErrorResponse, WorkoutDetail, WorkoutSet } from '../types/models';
 
 // Mounted by workoutsRouter at '/:id/sets', so '/:setId' here is /workouts/:id/sets/:setId.
 // It sits under workoutsRouter, so requireAuth has already run for every route here.
 // mergeParams: by default a router only sees the params in its own paths (:setId). This option
 // also gives it the parent's :id. Express's types can't see that option, so SetParams declares
 // both by hand.
+//
+// set_number is each set's position within its exercise in the workout (1..n, no gaps). The
+// server keeps it that way: an added set goes after its exercise's last one, and deleting a set
+// moves the later ones down. Both lock the workout first (see db/workoutLock.ts).
 const setsRouter = Router({ mergeParams: true });
 
 type SetParams = { id: string; setId: string };
@@ -26,40 +32,37 @@ setsRouter.post(
     if (workoutId === null) {
       return res.status(400).json({ error: 'Invalid workout id' });
     }
-    if (!isAddSetBody(req.body)) {
+    if (!isNewSetInput(req.body)) {
       return res.status(400).json({ error: 'Invalid set body' });
     }
-    const { exercise_id, set_number, reps, weight, unit } = req.body;
+    const { exercise_id, reps, weight, unit } = req.body;
     const user = getAuthUser(req);
 
     try {
-      // INSERT ... SELECT inserts one row per row the SELECT finds. The SELECT finds the workout
-      // only if it's this id and this user's, so a missing or someone else's workout inserts
-      // nothing (rowCount 0, a 404), and the exercise FK is never checked for it, so an intruder
-      // can't get a 400 that would reveal the workout exists.
-      // set_number: the one sent, else this workout's highest + 1, else 1 (MAX of no rows is
-      // NULL, and NULL + 1 is NULL, so COALESCE falls through to 1 for an empty workout).
-      // ::int tells Postgres what type $2 is, since it could be NULL.
-      // Not safe against two adds at once: both can read the same MAX (see ROADMAP.md).
-      const insertResult = await pool.query(
-        `INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit)
-         SELECT w.id, $1, COALESCE($2::int, (SELECT MAX(s.set_number) + 1 FROM sets s WHERE s.workout_id = w.id), 1), $3, $4, $5
-         FROM workouts w
-         WHERE w.id = $6 AND w.user_id = $7`,
-        // `?? null`: pg sends JS null as SQL NULL; undefined isn't a value it accepts.
-        [exercise_id, set_number ?? null, reps, weight, unit ?? 'lb', workoutId, user.id]
-      );
-      if (insertResult.rowCount === 0) {
+      const found = await withTransaction(async (client) => {
+        // A missing or someone else's workout stops here, before the insert, so the exercise is
+        // never checked for it and an intruder can't get a 400 that would reveal the workout exists.
+        if (!(await lockWorkout(client, workoutId, user.id))) {
+          return false;
+        }
+        // The new set's number: this exercise's highest in the workout + 1. An aggregate with no
+        // GROUP BY always gives exactly one row, even over no sets, where MAX is NULL; COALESCE
+        // turns that into 0, so an exercise's first set is 1.
+        await client.query(
+          `INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit)
+           SELECT $1, $2, COALESCE(MAX(set_number), 0) + 1, $3, $4, $5
+           FROM sets
+           WHERE workout_id = $1 AND exercise_id = $2`,
+          [workoutId, exercise_id, reps, weight, unit ?? 'lb']
+        );
+        return true;
+      });
+      if (!found) {
         return res.status(404).json({ error: 'Workout not found' });
       }
     } catch (err: unknown) {
       if (isUnknownExerciseError(err)) {
         return res.status(400).json({ error: 'Unknown exercise_id' });
-      }
-      // The body was range-checked, so only MAX + 1 can overflow: the workout's highest
-      // set_number is already the INTEGER max. A conflict with the workout's state, not a bad body.
-      if (isOutOfRangeError(err)) {
-        return res.status(409).json({ error: 'No set_number left after the highest one in this workout' });
       }
       throw err;
     }
@@ -73,6 +76,8 @@ setsRouter.post(
   }
 );
 
+// Edits a set's reps, weight or unit. Its exercise and number can't change here, so it doesn't
+// affect any other set and needs no lock.
 setsRouter.patch(
   '/:setId',
   async (
@@ -97,8 +102,8 @@ setsRouter.patch(
     const assignments: string[] = [];
     const values: (number | string)[] = [];
     for (const column of UPDATE_SET_KEYS) {
-      // `column` is the union 'exercise_id' | 'set_number' | ..., so body[column] type-checks
-      // as number | WeightUnit | undefined. With a plain string it would be an error.
+      // `column` is the union 'reps' | 'weight' | 'unit', so body[column] type-checks as
+      // number | WeightUnit | undefined. With a plain string it would be an error.
       const value = body[column];
       if (value !== undefined) {
         values.push(value);
@@ -107,30 +112,20 @@ setsRouter.patch(
     }
 
     const user = getAuthUser(req);
-    try {
-      // UPDATE ... FROM joins in the workouts table, so a set only matches if it's this id,
-      // in the workout named in the URL, and that workout is the user's. Any mismatch matches
-      // no row, which gives one 404 for all of them.
-      // (SET can't qualify columns with the alias: it's `reps = ...`, not `s.reps = ...`.)
-      const n = values.length;
-      const updateResult = await pool.query(
-        `UPDATE sets s SET ${assignments.join(', ')}
-         FROM workouts w
-         WHERE s.id = $${n + 1} AND s.workout_id = $${n + 2}
-           AND w.id = s.workout_id AND w.user_id = $${n + 3}`,
-        [...values, setId, workoutId, user.id]
-      );
-      if (updateResult.rowCount === 0) {
-        return res.status(404).json({ error: 'Set not found' });
-      }
-    } catch (err: unknown) {
-      // The FK is only checked on rows the UPDATE actually changes, so a set the user can't
-      // see gets its 404 above and never reaches this 400, which would reveal that it exists.
-      if (isUnknownExerciseError(err)) {
-        return res.status(400).json({ error: 'Unknown exercise_id' });
-      }
-      // Anything else is our problem: rethrow, and Express 5 hands it to the error handler (500).
-      throw err;
+    // UPDATE ... FROM joins in the workouts table, so a set only matches if it's this id,
+    // in the workout named in the URL, and that workout is the user's. Any mismatch matches
+    // no row, which gives one 404 for all of them.
+    // (SET can't qualify columns with the alias: it's `reps = ...`, not `s.reps = ...`.)
+    const n = values.length;
+    const updateResult = await pool.query(
+      `UPDATE sets s SET ${assignments.join(', ')}
+       FROM workouts w
+       WHERE s.id = $${n + 1} AND s.workout_id = $${n + 2}
+         AND w.id = s.workout_id AND w.user_id = $${n + 3}`,
+      [...values, setId, workoutId, user.id]
+    );
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Set not found' });
     }
 
     const workout = await loadWorkoutDetail(workoutId, user.id);
@@ -154,17 +149,34 @@ setsRouter.delete(
       return res.status(400).json({ error: 'Invalid set id' });
     }
     const user = getAuthUser(req);
-    // DELETE ... USING is Postgres's way to join another table into a DELETE, like UPDATE ... FROM
-    // above, and with the same three-way match. The workout itself is left alone, even if this
-    // was its last set.
-    const result = await pool.query(
-      `DELETE FROM sets s
-       USING workouts w
-       WHERE s.id = $1 AND s.workout_id = $2
-         AND w.id = s.workout_id AND w.user_id = $3`,
-      [setId, workoutId, user.id]
-    );
-    if (result.rowCount === 0) {
+
+    const deleted = await withTransaction(async (client) => {
+      // The lock checks the workout is the user's; the DELETE then checks the set is in it.
+      // Either failing gives the same 404. The workout itself stays, even if this was its last set.
+      if (!(await lockWorkout(client, workoutId, user.id))) {
+        return false;
+      }
+      // RETURNING hands back columns of the deleted row, so the shift below knows where it was.
+      const result = await client.query<Pick<WorkoutSet, 'exercise_id' | 'set_number'>>(
+        'DELETE FROM sets WHERE id = $1 AND workout_id = $2 RETURNING exercise_id, set_number',
+        [setId, workoutId]
+      );
+      const set = result.rows[0];
+      if (!set) {
+        return false;
+      }
+      // Close the gap: the exercise's later sets each move down one (Squat 1, 3, 4 -> 1, 2, 3).
+      // The unique constraint is DEFERRABLE, so it's checked after this whole statement rather
+      // than after each row, when a row can briefly share a number with one that hasn't moved yet.
+      await client.query(
+        `UPDATE sets SET set_number = set_number - 1
+         WHERE workout_id = $1 AND exercise_id = $2 AND set_number > $3`,
+        [workoutId, set.exercise_id, set.set_number]
+      );
+      return true;
+    });
+
+    if (!deleted) {
       return res.status(404).json({ error: 'Set not found' });
     }
     return res.status(204).end();

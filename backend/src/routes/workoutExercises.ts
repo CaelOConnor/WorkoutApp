@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
-import pool from '../db/pool';
+import { withTransaction } from '../db/transaction';
 import { loadWorkoutDetail } from '../db/workoutDetail';
+import { lockWorkout } from '../db/workoutLock';
 import { getAuthUser } from '../middleware/auth';
 import { parseId } from '../validation';
 import type { ErrorResponse, WorkoutDetail } from '../types/models';
@@ -30,25 +31,36 @@ workoutExercisesRouter.delete(
     }
     const user = getAuthUser(req);
 
-    // One statement, so the sets go all together or not at all. USING joins in workouts for the
-    // ownership check, like DELETE .../sets/:setId: another user's workout matches no rows.
-    const result = await pool.query(
-      `DELETE FROM sets s
-       USING workouts w
-       WHERE s.workout_id = $1 AND s.exercise_id = $2
-         AND w.id = s.workout_id AND w.user_id = $3`,
-      [workoutId, exerciseId, user.id]
-    );
+    // A union of string literals names each outcome, and TypeScript checks every comparison
+    // below against exactly these three (a typo like 'no set' is a compile error).
+    type Outcome = 'no workout' | 'no sets' | 'removed';
+    const outcome = await withTransaction(async (client): Promise<Outcome> => {
+      // Locked like adding or deleting a set (see db/workoutLock.ts): a set of this exercise
+      // added at the same moment would otherwise be numbered after sets that are being removed.
+      // The lock only finds this user's workouts, so someone else's gets the same 'Workout not
+      // found' as a missing one, and the more specific message below reveals nothing.
+      if (!(await lockWorkout(client, workoutId, user.id))) {
+        return 'no workout';
+      }
+      // One statement, so the sets go all together or not at all. No renumbering: the other
+      // exercises' numbers never counted this one's sets.
+      const result = await client.query('DELETE FROM sets WHERE workout_id = $1 AND exercise_id = $2', [
+        workoutId,
+        exerciseId,
+      ]);
+      return result.rowCount === 0 ? 'no sets' : 'removed';
+    });
 
-    // Loaded either way: it's the response on success, and on a 0-row delete it tells the two
-    // 404s apart. It only finds this user's workouts, so someone else's workout gets the same
-    // 'Workout not found' as a missing one, and the more specific message reveals nothing.
-    const workout = await loadWorkoutDetail(workoutId, user.id);
-    if (!workout) {
+    if (outcome === 'no workout') {
       return res.status(404).json({ error: 'Workout not found' });
     }
-    if (result.rowCount === 0) {
+    if (outcome === 'no sets') {
       return res.status(404).json({ error: 'Exercise not in this workout' });
+    }
+    const workout = await loadWorkoutDetail(workoutId, user.id);
+    if (!workout) {
+      // Only possible if the workout was deleted between the two queries.
+      return res.status(404).json({ error: 'Workout not found' });
     }
     return res.json(workout);
   }

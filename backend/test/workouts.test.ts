@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import app from '../src/app';
 import { authHeader } from './tokens';
-import { addSet, createExercise, createUser, createWorkout, pool, resetDb } from './db';
+import { addSet, createExercise, createUser, createWorkout, createWorkoutOn, pool, resetDb } from './db';
 import type {
   PublicUser,
   Workout,
@@ -56,13 +56,13 @@ const INVALID_WEIGHTS = [
 // holds at most 6 significant digits, well within the ~15 a JS number (a float64) keeps exactly.
 const VALID_WEIGHTS = [9999.99, 100.12, 0.01];
 
-// Largest value a Postgres INTEGER holds; reps, set_number and exercise_id are all INTEGER.
+// Largest value a Postgres INTEGER holds; reps and exercise_id are both INTEGER.
 const MAX_PG_INTEGER = 2_147_483_647;
 
 // Integer set fields one past that limit. Postgres rejects them with an out-of-range error (a 500).
+// (set_number is INTEGER too, but the server assigns it; a client never sends one.)
 const OVERSIZED_INTEGER_FIELDS = [
   ['reps', { reps: MAX_PG_INTEGER + 1 }],
-  ['set_number', { set_number: MAX_PG_INTEGER + 1 }],
   ['exercise_id', { exercise_id: MAX_PG_INTEGER + 1 }],
 ] as const;
 
@@ -70,6 +70,7 @@ describe('POST /workouts with a valid token', () => {
   // `let` with a type annotation: assigned in beforeEach, read in the tests.
   let lifter: PublicUser;
   let exerciseId: number;
+  let benchId: number;
 
   beforeEach(async () => {
     await resetDb();
@@ -79,13 +80,58 @@ describe('POST /workouts with a valid token', () => {
     await createUser('decoy@example.com', 'password');
     lifter = await createUser('lifter@example.com', 'password');
     exerciseId = (await createExercise('Squat')).id;
+    benchId = (await createExercise('Bench')).id;
+  });
+
+  it("numbers each exercise's sets 1, 2, 3... in the order they're sent", async () => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({
+        // Interleaved, so numbering by position in the whole list would give Bench 2 and 4.
+        sets: [
+          { exercise_id: exerciseId, reps: 5, weight: 225 },
+          { exercise_id: benchId, reps: 8, weight: 135 },
+          { exercise_id: exerciseId, reps: 5, weight: 235 },
+          { exercise_id: benchId, reps: 8, weight: 140 },
+          { exercise_id: exerciseId, reps: 3, weight: 245 },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    const saved = await pool.query<Pick<WorkoutSet, 'exercise_id' | 'set_number' | 'weight'>>(
+      'SELECT exercise_id, set_number, weight FROM sets ORDER BY id'
+    );
+    expect(saved.rows).toEqual([
+      { exercise_id: exerciseId, set_number: 1, weight: 225 },
+      { exercise_id: benchId, set_number: 1, weight: 135 },
+      { exercise_id: exerciseId, set_number: 2, weight: 235 },
+      { exercise_id: benchId, set_number: 2, weight: 140 },
+      { exercise_id: exerciseId, set_number: 3, weight: 245 },
+    ]);
+  });
+
+  // The server assigns set_number, so a client sending one is a mistake worth reporting, not
+  // something to silently ignore. Other unknown keys get the same 400.
+  it.each([
+    ['a set_number', { set_number: 1 }],
+    ['an unknown field', { rpe: 8 }],
+  ])('returns 400 and saves nothing when a set has %s', async (_label, extra) => {
+    const res = await request(app)
+      .post('/workouts')
+      .set('Authorization', authHeader(lifter.id))
+      .send({ sets: [{ exercise_id: exerciseId, reps: 5, weight: 225, ...extra }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: expect.any(String) });
+    expect((await pool.query('SELECT id FROM workouts')).rows).toEqual([]);
   });
 
   it('saves the workout for the user in the token', async () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 }] });
+      .send({ sets: [{ exercise_id: exerciseId, reps: 5, weight: 225 }] });
 
     expect(res.status).toBe(201);
     // Check the database directly: the response only has the new id, not who owns it.
@@ -101,8 +147,8 @@ describe('POST /workouts with a valid token', () => {
         // The first set is valid, so by the time the second one fails the workout row and
         // set 1 are already inserted. Only a ROLLBACK leaves the tables empty.
         sets: [
-          { exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 },
-          { exercise_id: 9999, set_number: 2, reps: 5, weight: 225 },
+          { exercise_id: exerciseId, reps: 5, weight: 225 },
+          { exercise_id: 9999, reps: 5, weight: 225 },
         ],
       });
 
@@ -123,7 +169,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: theirs.id, set_number: 1, reps: 5, weight: 50 }] });
+      .send({ sets: [{ exercise_id: theirs.id, reps: 5, weight: 50 }] });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'Unknown exercise_id' });
@@ -136,7 +182,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: mine.id, set_number: 1, reps: 5, weight: 50 }] });
+      .send({ sets: [{ exercise_id: mine.id, reps: 5, weight: 50 }] });
 
     expect(res.status).toBe(201);
   });
@@ -146,7 +192,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ date, sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 }] });
+      .send({ date, sets: [{ exercise_id: exerciseId, reps: 5, weight: 225 }] });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -158,7 +204,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ date, sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 225 }] });
+      .send({ date, sets: [{ exercise_id: exerciseId, reps: 5, weight: 225 }] });
 
     expect(res.status).toBe(201);
     // date::text lets Postgres format the DATE, avoiding JS time-zone conversion.
@@ -170,7 +216,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight }] });
+      .send({ sets: [{ exercise_id: exerciseId, reps: 5, weight }] });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -182,7 +228,7 @@ describe('POST /workouts with a valid token', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight }] });
+      .send({ sets: [{ exercise_id: exerciseId, reps: 5, weight }] });
 
     expect(res.status).toBe(201);
     const saved = await pool.query<Pick<WorkoutSet, 'weight'>>('SELECT weight FROM sets');
@@ -194,7 +240,7 @@ describe('POST /workouts with a valid token', () => {
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
       // Spread order matters: the oversized field comes last, so it overrides the valid one.
-      .send({ sets: [{ exercise_id: exerciseId, set_number: 1, reps: 5, weight: 100, ...field }] });
+      .send({ sets: [{ exercise_id: exerciseId, reps: 5, weight: 100, ...field }] });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -202,15 +248,15 @@ describe('POST /workouts with a valid token', () => {
     expect(workouts.rows).toEqual([]);
   });
 
-  it('saves the largest INTEGER as reps and set_number', async () => {
+  it('saves the largest INTEGER as reps', async () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authHeader(lifter.id))
-      .send({ sets: [{ exercise_id: exerciseId, set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER, weight: 100 }] });
+      .send({ sets: [{ exercise_id: exerciseId, reps: MAX_PG_INTEGER, weight: 100 }] });
 
     expect(res.status).toBe(201);
-    const saved = await pool.query<Pick<WorkoutSet, 'reps' | 'set_number'>>('SELECT reps, set_number FROM sets');
-    expect(saved.rows).toEqual([{ reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER }]);
+    const saved = await pool.query<Pick<WorkoutSet, 'reps'>>('SELECT reps FROM sets');
+    expect(saved.rows).toEqual([{ reps: MAX_PG_INTEGER }]);
   });
 });
 
@@ -255,15 +301,15 @@ describe('GET /workouts with a valid token', () => {
     expect(res.body).toEqual(expected);
   });
 
-  it('nests each workout\'s own sets under it, ordered by set_number', async () => {
+  it("nests each workout's own sets under it, grouped by exercise", async () => {
     const workoutA2 = await createWorkout(userA.id, squatId, 'Leg day');
     await setWorkoutDate(workoutA.id, '2026-09-02');
     await setWorkoutDate(workoutA2.id, '2026-09-01');
-    // Inserted out of order and interleaved across the two workouts, so grouping or ordering
-    // by insertion (set id) would put sets in the wrong place.
-    const a3 = await addSet(workoutA.id, benchId, 3, 6, 80);
+    // Interleaved across the two workouts, and A's Squat set is added before its second Bench
+    // set, so ordering by set_number alone would put Squat 1 between Bench 1 and Bench 2.
+    const a2 = await addSet(workoutA.id, squatId, 1, 8, 60);
     const b2 = await addSet(workoutA2.id, squatId, 2, 3, 140);
-    const a2 = await addSet(workoutA.id, squatId, 2, 8, 60);
+    const a3 = await addSet(workoutA.id, benchId, 2, 6, 80);
 
     const res = await request(app).get('/workouts').set('Authorization', authHeader(userA.id));
 
@@ -275,8 +321,8 @@ describe('GET /workouts with a valid token', () => {
         notes: "A's workout",
         sets: [
           { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
-          { id: a2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 8, weight: 60, unit: 'lb' },
-          { id: a3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 6, weight: 80, unit: 'lb' },
+          { id: a3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 2, reps: 6, weight: 80, unit: 'lb' },
+          { id: a2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 8, weight: 60, unit: 'lb' },
         ],
       },
       {
@@ -333,6 +379,7 @@ describe('GET /workouts/:id with a valid token', () => {
   let lifter: PublicUser;
   let squatId: number;
   let benchId: number;
+  let rowId: number;
   let workout: Pick<Workout, 'id'>;
 
   beforeEach(async () => {
@@ -340,38 +387,44 @@ describe('GET /workouts/:id with a valid token', () => {
     lifter = await createUser('lifter@example.com', 'password');
     squatId = (await createExercise('Squat')).id;
     benchId = (await createExercise('Bench')).id;
+    rowId = (await createExercise('Row')).id;
     // createWorkout adds set 1 (Squat, 5 reps, 100).
     workout = await createWorkout(lifter.id, squatId, 'Leg day');
   });
 
-  it("returns the token user's workout with its sets nested, ordered by set_number", async () => {
-    // Inserted out of order (3 before 2), so ordering by insertion or by id would fail the test.
-    const set3 = await addSet(workout.id, benchId, 3, 8, 60);
-    const set2 = await addSet(workout.id, squatId, 2, 3, 120.5);
-    // createWorkout doesn't return its set's id, so look it up.
-    const set1Result = await pool.query<Pick<WorkoutSet, 'id'>>(
-      'SELECT id FROM sets WHERE workout_id = $1 AND set_number = 1',
-      [workout.id]
-    );
-    const set1 = set1Result.rows[0];
-    await setWorkoutDate(workout.id, '2026-09-05');
+  it("returns the token user's workout with its sets grouped by exercise, in the order each was first added", async () => {
+    const day = await createWorkoutOn(lifter.id, '2026-09-05');
+    // Row, then Bench, then Squat: neither exercise id order (Squat, Bench, Row) nor name order
+    // (Bench, Row, Squat), so only "first added" puts them in this order.
+    const row1 = await addSet(day.id, rowId, 1, 10, 70);
+    const bench1 = await addSet(day.id, benchId, 1, 8, 60);
+    const squat1 = await addSet(day.id, squatId, 1, 5, 100);
+    // Squat 3 is added before Squat 2: within an exercise, set_number decides, not the order the
+    // sets were added (rows from before the per-exercise migration can look like this).
+    const squat3 = await addSet(day.id, squatId, 3, 1, 140);
+    const squat2 = await addSet(day.id, squatId, 2, 3, 120.5);
+    // Added last, but it's Row's, so it goes with Row's first set.
+    const row2 = await addSet(day.id, rowId, 2, 10, 75);
 
     const res = await request(app)
-      .get(`/workouts/${workout.id}`)
+      .get(`/workouts/${day.id}`)
       .set('Authorization', authHeader(lifter.id));
 
     expect(res.status).toBe(200);
     // Annotated so the expected object is checked against the type: a typo in a key is a compile error.
     const expected: WorkoutDetail = {
-      id: workout.id,
+      id: day.id,
       // Exactly the stored day, whatever the server's time zone (no JS Date in between).
       date: '2026-09-05',
-      notes: 'Leg day',
+      notes: null,
       sets: [
         // NUMERIC(6,2) comes back as a number (db/pool.ts), so 100, not '100.00'.
-        { id: set1?.id ?? -1, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
-        { id: set2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: 120.5, unit: 'lb' },
-        { id: set3.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 3, reps: 8, weight: 60, unit: 'lb' },
+        { id: row1.id, exercise_id: rowId, exercise_name: 'Row', set_number: 1, reps: 10, weight: 70, unit: 'lb' },
+        { id: row2.id, exercise_id: rowId, exercise_name: 'Row', set_number: 2, reps: 10, weight: 75, unit: 'lb' },
+        { id: bench1.id, exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 8, weight: 60, unit: 'lb' },
+        { id: squat1.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
+        { id: squat2.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 2, reps: 3, weight: 120.5, unit: 'lb' },
+        { id: squat3.id, exercise_id: squatId, exercise_name: 'Squat', set_number: 3, reps: 1, weight: 140, unit: 'lb' },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -670,11 +723,20 @@ async function readSet(setId: number): Promise<Omit<WorkoutSet, 'id'> | undefine
   return result.rows[0];
 }
 
+// A workout's sets as [exercise id, set_number] pairs, in the order they were added (by id).
+// Straight from the table, so it checks what was saved, not what a route returned.
+async function setNumbersOf(workoutId: number): Promise<[number, number][]> {
+  const result = await pool.query<Pick<WorkoutSet, 'exercise_id' | 'set_number'>>(
+    'SELECT exercise_id, set_number FROM sets WHERE workout_id = $1 ORDER BY id',
+    [workoutId]
+  );
+  return result.rows.map((row) => [row.exercise_id, row.set_number]);
+}
+
 describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
   let lifter: PublicUser;
   let intruder: PublicUser;
   let squatId: number;
-  let benchId: number;
   let workout: Pick<Workout, 'id'>;
   let otherWorkout: Pick<Workout, 'id'>;
   let intruderWorkout: Pick<Workout, 'id'>;
@@ -687,7 +749,8 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     lifter = await createUser('lifter@example.com', 'password');
     intruder = await createUser('intruder@example.com', 'password');
     squatId = (await createExercise('Squat')).id;
-    benchId = (await createExercise('Bench')).id;
+    // Exercise id 2, for the "an exercise_id" bad body: a real exercise, so only the key is wrong.
+    await createExercise('Bench');
     // createWorkout adds set 1 (Squat, 5 reps, 100); the set under test is set 2.
     workout = await createWorkout(lifter.id, squatId, 'Leg day');
     set = await addSet(workout.id, squatId, 2, 3, 120);
@@ -717,63 +780,14 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     expect(await readSet(set.id)).toEqual({ ...original, reps: 4, weight: 125.5 });
   });
 
-  it('changes the exercise, and the response shows the new exercise name', async () => {
+  it('updates the unit, leaving the other columns unchanged', async () => {
     const res = await request(app)
       .patch(`/workouts/${workout.id}/sets/${set.id}`)
       .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: benchId });
+      .send({ unit: 'kg' });
 
     expect(res.status).toBe(200);
-    const body: WorkoutDetail = res.body;
-    // find() returns `WorkoutDetailSet | undefined`; toMatchObject fails on undefined, which is what we want.
-    expect(body.sets.find((s) => s.id === set.id)).toMatchObject({ exercise_id: benchId, exercise_name: 'Bench' });
-  });
-
-  it('updates set_number and unit, leaving the other columns unchanged', async () => {
-    const res = await request(app)
-      .patch(`/workouts/${workout.id}/sets/${set.id}`)
-      .set('Authorization', authHeader(lifter.id))
-      .send({ set_number: 7, unit: 'kg' });
-
-    expect(res.status).toBe(200);
-    expect(await readSet(set.id)).toEqual({ ...original, set_number: 7, unit: 'kg' });
-  });
-
-  it('returns 400 and changes nothing for an exercise_id that does not exist', async () => {
-    const res = await request(app)
-      .patch(`/workouts/${workout.id}/sets/${set.id}`)
-      .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: 9999, reps: 1 });
-
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: expect.any(String) });
-    // reps was valid, but the UPDATE is one statement, so the FK failure stops all of it.
-    expect(await readSet(set.id)).toEqual(original);
-  });
-
-  it("returns 400 and changes nothing for another user's custom exercise", async () => {
-    const theirs = await createExercise('Their Lunge', intruder.id);
-
-    const res = await request(app)
-      .patch(`/workouts/${workout.id}/sets/${set.id}`)
-      .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: theirs.id });
-
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
-    expect(await readSet(set.id)).toEqual(original);
-  });
-
-  it("switches a set to the caller's own custom exercise", async () => {
-    const mine = await createExercise('My Lunge', lifter.id);
-
-    const res = await request(app)
-      .patch(`/workouts/${workout.id}/sets/${set.id}`)
-      .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: mine.id });
-
-    expect(res.status).toBe(200);
-    expect(await readSet(set.id)).toEqual({ ...original, exercise_id: mine.id });
+    expect(await readSet(set.id)).toEqual({ ...original, unit: 'kg' });
   });
 
   // The 404 cases below all give the same response, so a caller can't tell which rule failed,
@@ -855,8 +869,10 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     ['reps as a string', { reps: '5' }],
     ['negative weight', { weight: -5 }],
     ['weight as a string', { weight: '100' }],
-    ['set_number 0', { set_number: 0 }],
-    ['exercise_id 0', { exercise_id: 0 }],
+    // The server owns set_number (each exercise's sets are 1..n), and a set's exercise is fixed:
+    // a set logged under the wrong exercise is deleted and added again under the right one.
+    ['a set_number', { set_number: 3 }],
+    ['an exercise_id', { exercise_id: 2 }],
     ['an unknown unit', { unit: 'stone' }],
     ['a null unit', { unit: null }],
   ])('returns 400 and changes nothing for %s', async (_label, body) => {
@@ -891,25 +907,25 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     expect(await readSet(set.id)).toEqual({ ...original, weight });
   });
 
-  it.each(OVERSIZED_INTEGER_FIELDS)('returns 400 and changes nothing for %s past the INTEGER max', async (_label, body) => {
+  it('returns 400 and changes nothing for reps past the INTEGER max', async () => {
     const res = await request(app)
       .patch(`/workouts/${workout.id}/sets/${set.id}`)
       .set('Authorization', authHeader(lifter.id))
-      .send(body);
+      .send({ reps: MAX_PG_INTEGER + 1 });
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: expect.any(String) });
     expect(await readSet(set.id)).toEqual(original);
   });
 
-  it('saves the largest INTEGER as reps and set_number', async () => {
+  it('saves the largest INTEGER as reps', async () => {
     const res = await request(app)
       .patch(`/workouts/${workout.id}/sets/${set.id}`)
       .set('Authorization', authHeader(lifter.id))
-      .send({ reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER });
+      .send({ reps: MAX_PG_INTEGER });
 
     expect(res.status).toBe(200);
-    expect(await readSet(set.id)).toEqual({ ...original, reps: MAX_PG_INTEGER, set_number: MAX_PG_INTEGER });
+    expect(await readSet(set.id)).toEqual({ ...original, reps: MAX_PG_INTEGER });
   });
 });
 
@@ -947,6 +963,30 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
     const detail: WorkoutDetail = after.body;
     expect(detail.sets.map((s) => s.set_number)).toEqual([1]);
+  });
+
+  it('moves the later sets of the same exercise down one, leaving other exercises and workouts alone', async () => {
+    // Squat 1 (createWorkout) and 2 (`set`), then Bench 1, Squat 3, Bench 2, Squat 4.
+    const benchId = (await createExercise('Bench')).id;
+    await addSet(workout.id, benchId, 1, 8, 135);
+    await addSet(workout.id, squatId, 3, 3, 130);
+    await addSet(workout.id, benchId, 2, 8, 140);
+    await addSet(workout.id, squatId, 4, 3, 140);
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${set.id}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(204);
+    // Squat 3 and 4 become 2 and 3, keeping their order; Bench's numbers don't change.
+    expect(await setNumbersOf(workout.id)).toEqual([
+      [squatId, 1],
+      [benchId, 1],
+      [squatId, 2],
+      [benchId, 2],
+      [squatId, 3],
+    ]);
+    expect(await setNumbersOf(otherWorkout.id)).toEqual([[squatId, 1]]);
   });
 
   it("keeps a workout in both GET routes after its last set is deleted", async () => {
@@ -1016,6 +1056,9 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: expect.any(String) });
     expect(await readSet(set.id)).toBeDefined();
+    // The owner can lock otherWorkout, but no set was deleted, so nothing may be renumbered.
+    expect(await setNumbersOf(workout.id)).toEqual([[squatId, 1], [squatId, 2]]);
+    expect(await setNumbersOf(otherWorkout.id)).toEqual([[squatId, 1]]);
   });
 
   it("returns 404 for a set id that doesn't exist", async () => {
@@ -1071,11 +1114,11 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     workout = await createWorkout(lifter.id, squatId, 'Leg day');
   });
 
-  it('adds a set with the given set_number and returns 201 with the whole workout', async () => {
+  it('adds set 1 of an exercise new to the workout and returns 201 with the whole workout', async () => {
     const res = await request(app)
       .post(`/workouts/${workout.id}/sets`)
       .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: benchId, set_number: 5, reps: 8, weight: 60.5, unit: 'kg' });
+      .send({ exercise_id: benchId, reps: 8, weight: 60.5, unit: 'kg' });
 
     expect(res.status).toBe(201);
     const expected: WorkoutDetail = {
@@ -1084,7 +1127,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
       notes: 'Leg day',
       sets: [
         { id: expect.any(Number), exercise_id: squatId, exercise_name: 'Squat', set_number: 1, reps: 5, weight: 100, unit: 'lb' },
-        { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 5, reps: 8, weight: 60.5, unit: 'kg' },
+        { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 8, weight: 60.5, unit: 'kg' },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -1093,9 +1136,11 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(await setIdsOf(workout.id)).toHaveLength(2);
   });
 
-  it('assigns the highest set_number + 1 when set_number is missing, past any gap', async () => {
-    // Sets 1 and 3, as if set 2 had been deleted. Counting sets would give 3, a duplicate.
-    await addSet(workout.id, squatId, 3, 3, 120);
+  it("numbers the set after the highest of the same exercise, whatever other exercises have", async () => {
+    // Bench 1-3 after Squat 1: the workout's highest + 1 would make the new Squat set 4.
+    await addSet(workout.id, benchId, 1, 8, 135);
+    await addSet(workout.id, benchId, 2, 8, 135);
+    await addSet(workout.id, benchId, 3, 8, 135);
 
     const res = await request(app)
       .post(`/workouts/${workout.id}/sets`)
@@ -1104,9 +1149,54 @@ describe('POST /workouts/:id/sets with a valid token', () => {
 
     expect(res.status).toBe(201);
     const body: WorkoutDetail = res.body;
-    expect(body.sets.map((s) => s.set_number)).toEqual([1, 3, 4]);
-    // unit was missing too, so it gets the column's default.
-    expect(body.sets[2]).toMatchObject({ exercise_id: squatId, set_number: 4, reps: 2, weight: 130, unit: 'lb' });
+    // Grouped by exercise, so the new Squat set comes right after Squat 1, before the Bench sets.
+    expect(body.sets.map((s) => [s.exercise_name, s.set_number])).toEqual([
+      ['Squat', 1],
+      ['Squat', 2],
+      ['Bench', 1],
+      ['Bench', 2],
+      ['Bench', 3],
+    ]);
+    // unit was missing, so it gets the column's default.
+    expect(body.sets[1]).toMatchObject({ exercise_id: squatId, set_number: 2, reps: 2, weight: 130, unit: 'lb' });
+  });
+
+  it('gives adds sent at the same time distinct, consecutive numbers', async () => {
+    // Without the workout lock, each add could read the same highest number and save a duplicate
+    // (the unique constraint then makes one a 500). A race can pass by luck, so this test is a
+    // guard against losing the lock, not proof on its own.
+    const adds = Array.from({ length: 5 }, () =>
+      request(app)
+        .post(`/workouts/${workout.id}/sets`)
+        .set('Authorization', authHeader(lifter.id))
+        .send({ exercise_id: squatId, reps: 5, weight: 100 })
+        // .then() makes supertest send the request now; without it, nothing is sent until awaited.
+        .then((res) => res.status)
+    );
+
+    // Promise.all waits for every request, which all run at once.
+    expect(await Promise.all(adds)).toEqual([201, 201, 201, 201, 201]);
+    const numbers = (await setNumbersOf(workout.id)).map(([, setNumber]) => setNumber);
+    expect(numbers.toSorted((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('leaves no gap or duplicate when a set is added while another is deleted', async () => {
+    const squat2 = await addSet(workout.id, squatId, 2, 5, 100);
+    await addSet(workout.id, squatId, 3, 5, 100);
+
+    const [deleted, added] = await Promise.all([
+      request(app).delete(`/workouts/${workout.id}/sets/${squat2.id}`).set('Authorization', authHeader(lifter.id)),
+      request(app)
+        .post(`/workouts/${workout.id}/sets`)
+        .set('Authorization', authHeader(lifter.id))
+        .send({ exercise_id: squatId, reps: 5, weight: 100 }),
+    ]);
+
+    expect([deleted.status, added.status]).toEqual([204, 201]);
+    // Whichever ran first, three Squat sets remain, numbered 1-3. Without the lock, the add could
+    // read 3 as the highest, the delete move 3 down to 2, and the add then save 4: 1, 2, 4.
+    const numbers = (await setNumbersOf(workout.id)).map(([, setNumber]) => setNumber);
+    expect(numbers.toSorted((a, b) => a - b)).toEqual([1, 2, 3]);
   });
 
   it("only counts this workout's sets when assigning set_number", async () => {
@@ -1141,22 +1231,6 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(body.sets).toEqual([
       { id: expect.any(Number), exercise_id: benchId, exercise_name: 'Bench', set_number: 1, reps: 10, weight: 40, unit: 'lb' },
     ]);
-  });
-
-  it('returns 409 and saves nothing when the next set_number would pass the INTEGER max', async () => {
-    // Reachable through the API: PATCH a set's set_number to the max, then add one without a number.
-    await addSet(workout.id, squatId, MAX_PG_INTEGER, 5, 100);
-    const before = await setIdsOf(workout.id);
-
-    const res = await request(app)
-      .post(`/workouts/${workout.id}/sets`)
-      .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: squatId, reps: 5, weight: 100 });
-
-    // 409 Conflict, not 400: the body is fine; the workout's current state is what blocks it.
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: expect.any(String) });
-    expect(await setIdsOf(workout.id)).toEqual(before);
   });
 
   it('returns 400 and saves nothing for an exercise_id that does not exist', async () => {
@@ -1247,9 +1321,8 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     ['a missing exercise_id', { reps: 5, weight: 100 }],
     ['missing reps', { exercise_id: 1, weight: 100 }],
     ['a missing weight', { exercise_id: 1, reps: 5 }],
-    // Optional means missing or valid; null is neither.
-    ['a null set_number', { exercise_id: 1, reps: 5, weight: 100, set_number: null }],
-    ['set_number 0', { exercise_id: 1, reps: 5, weight: 100, set_number: 0 }],
+    // The server numbers each exercise's sets, so a client-sent number is rejected, not ignored.
+    ['a set_number', { exercise_id: 1, reps: 5, weight: 100, set_number: 2 }],
     ['an unknown unit', { exercise_id: 1, reps: 5, weight: 100, unit: 'stone' }],
     // Unknown keys are rejected, as in the PATCH routes: the URL decides the workout.
     ['workout_id', { exercise_id: 1, reps: 5, weight: 100, workout_id: 2 }],
@@ -1281,15 +1354,15 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     expect(body.sets[1]?.weight).toBe(weight);
   });
 
-  it('accepts the largest INTEGER as an explicit set_number and reps', async () => {
+  it('accepts the largest INTEGER as reps', async () => {
     const res = await request(app)
       .post(`/workouts/${workout.id}/sets`)
       .set('Authorization', authHeader(lifter.id))
-      .send({ exercise_id: squatId, set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER, weight: 100 });
+      .send({ exercise_id: squatId, reps: MAX_PG_INTEGER, weight: 100 });
 
     expect(res.status).toBe(201);
     const body: WorkoutDetail = res.body;
-    expect(body.sets[1]).toMatchObject({ set_number: MAX_PG_INTEGER, reps: MAX_PG_INTEGER });
+    expect(body.sets[1]).toMatchObject({ set_number: 2, reps: MAX_PG_INTEGER });
   });
 });
 
@@ -1309,12 +1382,12 @@ describe('DELETE /workouts/:id/exercises/:exerciseId with a valid token', () => 
     squatId = (await createExercise('Squat')).id;
     benchId = (await createExercise('Bench')).id;
     rowId = (await createExercise('Row')).id;
-    // Squat sets 1, 3, 5 with Bench sets 2 and 4 in between, so the Squat sets aren't contiguous.
+    // Squat 1-3 interleaved with Bench 1-2, so the Squat sets weren't added one after another.
     workout = await createWorkout(lifter.id, squatId, 'Mixed day');
-    await addSet(workout.id, benchId, 2, 8, 135);
-    await addSet(workout.id, squatId, 3, 5, 110);
-    await addSet(workout.id, benchId, 4, 8, 140);
-    await addSet(workout.id, squatId, 5, 5, 120);
+    await addSet(workout.id, benchId, 1, 8, 135);
+    await addSet(workout.id, squatId, 2, 5, 110);
+    await addSet(workout.id, benchId, 2, 8, 140);
+    await addSet(workout.id, squatId, 3, 5, 120);
     intruderWorkout = await createWorkout(intruder.id, squatId, 'Intruder day');
   });
 
@@ -1326,9 +1399,10 @@ describe('DELETE /workouts/:id/exercises/:exerciseId with a valid token', () => 
     expect(res.status).toBe(200);
     const body: WorkoutDetail = res.body;
     expect(body).toMatchObject({ id: workout.id, notes: 'Mixed day' });
+    // Bench keeps its numbers: they were never shared with Squat.
     expect(body.sets.map((s) => [s.exercise_name, s.set_number])).toEqual([
+      ['Bench', 1],
       ['Bench', 2],
-      ['Bench', 4],
     ]);
     // And in the table, not just in the response.
     const squats = await pool.query('SELECT id FROM sets WHERE workout_id = $1 AND exercise_id = $2', [
@@ -1336,6 +1410,22 @@ describe('DELETE /workouts/:id/exercises/:exerciseId with a valid token', () => 
       squatId,
     ]);
     expect(squats.rowCount).toBe(0);
+  });
+
+  it('leaves the exercise numbered from 1 when a set of it is added while it is removed', async () => {
+    const [removed, added] = await Promise.all([
+      request(app).delete(`/workouts/${workout.id}/exercises/${squatId}`).set('Authorization', authHeader(lifter.id)),
+      request(app)
+        .post(`/workouts/${workout.id}/sets`)
+        .set('Authorization', authHeader(lifter.id))
+        .send({ exercise_id: squatId, reps: 5, weight: 100 }),
+    ]);
+
+    expect([removed.status, added.status]).toEqual([200, 201]);
+    // Remove first: the add is Squat 1. Add first: it's Squat 4, and the remove takes it too.
+    // Without the lock, the add could read 3 as the highest before the remove, and save a lone 4.
+    const squats = (await setNumbersOf(workout.id)).filter(([exerciseId]) => exerciseId === squatId);
+    expect([[], [[squatId, 1]]]).toContainEqual(squats);
   });
 
   it("doesn't touch the same exercise in other workouts", async () => {

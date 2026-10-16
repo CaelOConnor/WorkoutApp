@@ -6,7 +6,6 @@
 // narrows the argument from `unknown` to `X` in the calling code.
 
 import type {
-  AddSetBody,
   AuthBody,
   CreateExerciseBody,
   CreateWorkoutBody,
@@ -93,14 +92,25 @@ function isDateString(value: unknown): value is string {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-// unknown -> NewSetInput
+// The keys a new set may have, in POST /workouts and POST /workouts/:id/sets.
+// `satisfies` checks each one is a real key of NewSetInput, so a renamed field can't go stale here.
+const NEW_SET_KEYS = ['exercise_id', 'reps', 'weight', 'unit'] as const satisfies readonly (keyof NewSetInput)[];
+
+// unknown -> NewSetInput. Both POST routes that add sets use it (AddSetBody is the same type).
 // isRecord narrows first, so value.exercise_id etc. can be read (each is `unknown`),
 // then every field is checked. Optional `unit` may be missing (undefined) or a valid unit.
+// Unknown keys are rejected, as in the PATCH guards: a set_number (the server assigns it) or a
+// workout_id (the URL or the new workout decides it) can't look like it's being used.
 export function isNewSetInput(value: unknown): value is NewSetInput {
+  if (!isRecord(value)) {
+    return false;
+  }
+  // A readonly tuple of literals is assignable to readonly string[], so this widens it without a
+  // cast. includes() on the literal tuple itself wouldn't accept an arbitrary string key.
+  const allowedKeys: readonly string[] = NEW_SET_KEYS;
   return (
-    isRecord(value) &&
+    Object.keys(value).every((key) => allowedKeys.includes(key)) &&
     isPositiveInteger(value.exercise_id) &&
-    isPositiveInteger(value.set_number) &&
     isNonNegativeInteger(value.reps) &&
     isSetWeight(value.weight) &&
     (value.unit === undefined || isWeightUnit(value.unit))
@@ -141,13 +151,8 @@ export function isUpdateWorkoutBody(value: unknown): value is UpdateWorkoutBody 
 // clause from the same list the guard allows.
 // `as const` keeps each entry as its literal type ('reps', not string), and `satisfies` checks
 // every entry is a real key of UpdateSetBody without widening it back to that type.
-export const UPDATE_SET_KEYS = [
-  'exercise_id',
-  'set_number',
-  'reps',
-  'weight',
-  'unit',
-] as const satisfies readonly (keyof UpdateSetBody)[];
+// Not exercise_id (a set's exercise is fixed) or set_number (the server owns the numbering).
+export const UPDATE_SET_KEYS = ['reps', 'weight', 'unit'] as const satisfies readonly (keyof UpdateSetBody)[];
 
 // unknown -> UpdateSetBody
 // Same rules as isUpdateWorkoutBody: no unknown keys (so workout_id or id can't look editable),
@@ -157,35 +162,12 @@ export function isUpdateSetBody(value: unknown): value is UpdateSetBody {
   if (!isRecord(value)) {
     return false;
   }
-  // A readonly tuple of literals is assignable to readonly string[], so this widens it without a
-  // cast. includes() on the literal tuple itself wouldn't accept an arbitrary string key.
   const allowedKeys: readonly string[] = UPDATE_SET_KEYS;
   return (
     Object.keys(value).every((key) => allowedKeys.includes(key)) &&
     UPDATE_SET_KEYS.some((key) => value[key] !== undefined) &&
-    (value.exercise_id === undefined || isPositiveInteger(value.exercise_id)) &&
-    (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
     (value.reps === undefined || isNonNegativeInteger(value.reps)) &&
     (value.weight === undefined || isSetWeight(value.weight)) &&
-    (value.unit === undefined || isWeightUnit(value.unit))
-  );
-}
-
-// unknown -> AddSetBody
-// The same fields as a set in POST /workouts, with set_number optional. Unknown keys are rejected,
-// as in the PATCH guards, so a workout_id in the body can't look like it chooses the workout.
-// The allowed keys are exactly the set columns PATCH may change, so that list is reused.
-export function isAddSetBody(value: unknown): value is AddSetBody {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const allowedKeys: readonly string[] = UPDATE_SET_KEYS;
-  return (
-    Object.keys(value).every((key) => allowedKeys.includes(key)) &&
-    isPositiveInteger(value.exercise_id) &&
-    (value.set_number === undefined || isPositiveInteger(value.set_number)) &&
-    isNonNegativeInteger(value.reps) &&
-    isSetWeight(value.weight) &&
     (value.unit === undefined || isWeightUnit(value.unit))
   );
 }

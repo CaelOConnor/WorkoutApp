@@ -42,6 +42,8 @@ export interface WorkoutSet {
   id: number;
   workout_id: number;
   exercise_id: number;
+  // The set's position among its exercise's sets in this workout: 1, 2, 3... with no gaps
+  // (Squat 1-3, Bench 1-2). The server assigns it, and renumbers after a delete.
   set_number: number;
   reps: number;
   // NUMERIC(6,2) in Postgres. pg would return it as a string ('135.00'); db/pool.ts parses it
@@ -52,9 +54,10 @@ export interface WorkoutSet {
 
 // ---------- API request bodies ----------
 
+// One set in POST /workouts. No set_number: the server numbers each exercise's sets 1, 2, 3...
+// in the order they're sent.
 export interface NewSetInput {
   exercise_id: number;
-  set_number: number;
   reps: number;
   weight: number;
   unit?: WeightUnit; // `?` = optional; the server defaults to 'lb'
@@ -74,13 +77,14 @@ export interface UpdateWorkoutBody {
   notes?: string | null;
 }
 
-// POST /workouts/:id/sets. Omit drops set_number from NewSetInput, then it's added back as
-// optional: when it's missing, the server uses the workout's highest set_number + 1.
-export type AddSetBody = Omit<NewSetInput, 'set_number'> & { set_number?: number };
+// POST /workouts/:id/sets: the same fields as a set in POST /workouts. The new set becomes the last
+// of its exercise in the workout (its highest set_number + 1, or 1).
+export type AddSetBody = NewSetInput;
 
-// PATCH /workouts/:id/sets/:setId. Partial<T> makes every field of T optional, which is exactly
-// "send only what changes". NewSetInput's unit was already optional, so nothing else differs.
-export type UpdateSetBody = Partial<NewSetInput>;
+// PATCH /workouts/:id/sets/:setId. Omit<T, K> drops exercise_id: a set's exercise can't change
+// (delete it and add one under the right exercise). Partial<T> then makes every remaining field
+// optional, which is exactly "send only what changes".
+export type UpdateSetBody = Partial<Omit<NewSetInput, 'exercise_id'>>;
 
 // GET /exercises/:id/progress query string. Every key is optional. A missing unit means the unit
 // of the caller's most recent set of that exercise; a missing from/to leaves that end open.
@@ -130,7 +134,8 @@ export type WorkoutDetailSet = Pick<
   exercise_name: string;
 };
 
-// One workout with its sets nested, ordered by set_number. GET /workouts/:id returns one;
+// One workout with its sets nested, grouped by exercise: exercises in the order they were first
+// added to the workout, each one's sets by set_number. GET /workouts/:id returns one;
 // GET /workouts returns an array of them (sets: [] for a workout with no sets).
 // No user_id: the caller can only ever see their own workouts, so it would add nothing.
 export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {

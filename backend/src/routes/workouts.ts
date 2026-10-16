@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
-import type { PoolClient } from 'pg';
 import pool from '../db/pool';
 import { isUnknownExerciseError } from '../db/errors';
+import { withTransaction } from '../db/transaction';
 import { listWorkoutDetails, loadWorkoutDetail } from '../db/workoutDetail';
 import { getAuthUser, requireAuth } from '../middleware/auth';
 import { isCreateWorkoutBody, isUpdateWorkoutBody, parseId } from '../validation';
@@ -42,52 +42,43 @@ workoutsRouter.post(
     }
     const { date, notes, sets } = req.body;
     const user = getAuthUser(req);
-    // Declared outside the try so catch/finally can see it; stays undefined if connect() fails.
-    let client: PoolClient | undefined;
 
     try {
-      client = await pool.connect();
-      await client.query('BEGIN');
-
-      const workoutResult = await client.query<Pick<Workout, 'id'>>(
-        'INSERT INTO workouts (user_id, date, notes) VALUES ($1, $2, $3) RETURNING id',
-        [user.id, date || new Date(), notes || null]
-      );
-      // rows[0] is `Pick<Workout, 'id'> | undefined` because of noUncheckedIndexedAccess.
-      const workout = workoutResult.rows[0];
-      if (!workout) {
-        throw new Error('Workout insert returned no row');
-      }
-
-      for (const set of sets) {
-        await client.query(
-          'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit) VALUES ($1, $2, $3, $4, $5, $6)',
-          [workout.id, set.exercise_id, set.set_number, set.reps, set.weight, set.unit ?? 'lb']
+      // One transaction: if any set fails (e.g. an unknown exercise), the workout and the sets
+      // before it are rolled back too. No lock: nobody else can see this workout yet.
+      const workoutId = await withTransaction(async (client) => {
+        const workoutResult = await client.query<Pick<Workout, 'id'>>(
+          'INSERT INTO workouts (user_id, date, notes) VALUES ($1, $2, $3) RETURNING id',
+          [user.id, date || new Date(), notes || null]
         );
-      }
+        // rows[0] is `Pick<Workout, 'id'> | undefined` because of noUncheckedIndexedAccess.
+        const workout = workoutResult.rows[0];
+        if (!workout) {
+          throw new Error('Workout insert returned no row');
+        }
 
-      await client.query('COMMIT');
-      return res.status(201).json({ id: workout.id });
+        // Each exercise's sets are numbered 1, 2, 3... in the order they're sent, so interleaved
+        // sets (Squat, Bench, Squat) become Squat 1, Bench 1, Squat 2. The Map counts how many
+        // sets of each exercise have been numbered so far.
+        const countByExercise = new Map<number, number>();
+        for (const set of sets) {
+          const setNumber = (countByExercise.get(set.exercise_id) ?? 0) + 1;
+          countByExercise.set(set.exercise_id, setNumber);
+          await client.query(
+            'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit) VALUES ($1, $2, $3, $4, $5, $6)',
+            [workout.id, set.exercise_id, setNumber, set.reps, set.weight, set.unit ?? 'lb']
+          );
+        }
+        return workout.id;
+      });
+      return res.status(201).json({ id: workoutId });
     } catch (err: unknown) {
-      // Here `client` is `PoolClient | undefined`: TypeScript can't know which line threw.
-      if (client) {
-        // Log a failed ROLLBACK (e.g. the connection dropped) but still report the original error.
-        await client.query('ROLLBACK').catch((rollbackErr: unknown) => {
-          console.error('ROLLBACK failed:', rollbackErr);
-        });
-      }
-      // Checked after ROLLBACK: a failed statement leaves the transaction aborted, and the
-      // client must not go back to the pool in that state.
+      // withTransaction has already rolled back by the time the error gets here.
       if (isUnknownExerciseError(err)) {
         return res.status(400).json({ error: 'Unknown exercise_id' });
       }
-      console.error('POST /workouts failed:', err);
-      return res.status(500).json({ error: 'Internal server error' });
-    } finally {
-      // Only release a client we actually acquired.
-      if (client) {
-        client.release();
-      }
+      // Anything else is our problem: Express 5 hands it to the error handler (500).
+      throw err;
     }
   }
 );

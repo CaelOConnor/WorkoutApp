@@ -114,14 +114,13 @@ export async function seedSampleWorkouts(email: string, today: string): Promise<
 
       const extra = timesDone[session] * WEIGHT_STEP;
       timesDone[session] += 1;
-      // set_number runs on across the whole workout (1, 2, 3, ...), like a set logged in the app.
-      let setNumber = 0;
       for (const exercise of SESSIONS[session]) {
-        for (const reps of exercise.reps) {
-          setNumber += 1;
+        // set_number is 1, 2, 3... within each exercise, as the API numbers them.
+        // entries() gives [index, value] pairs, so the index needs no counter of its own.
+        for (const [index, reps] of exercise.reps.entries()) {
           await client.query(
             'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, $3, $4, $5)',
-            [workoutId, exerciseIds.get(exercise.name), setNumber, reps, exercise.startWeight + extra]
+            [workoutId, exerciseIds.get(exercise.name), index + 1, reps, exercise.startWeight + extra]
           );
         }
       }
