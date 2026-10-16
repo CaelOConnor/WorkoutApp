@@ -1,8 +1,13 @@
 import { DatabaseError } from 'pg';
 
-// The constraints that reject a set's exercise_id: the foreign key (no such exercise), and the
-// sets_exercise_visible trigger (another user's custom exercise; see the custom-exercises migration).
-const UNKNOWN_EXERCISE_CONSTRAINTS = ['sets_exercise_id_fkey', 'sets_exercise_visible'];
+// The constraints that reject a set's exercise_id: the foreign keys (no such exercise) on sets and
+// on workout_exercises (written before an exercise's first set), and the sets_exercise_visible
+// check (another user's custom exercise; see the custom-exercises and workout-exercises migrations).
+const UNKNOWN_EXERCISE_CONSTRAINTS = [
+  'sets_exercise_id_fkey',
+  'workout_exercises_exercise_id_fkey',
+  'sets_exercise_visible',
+];
 
 // True when a write failed because a set pointed at an exercise that doesn't exist, or that the
 // workout's owner can't see. 23503 = foreign_key_violation. The constraint name is matched too,

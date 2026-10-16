@@ -3,6 +3,7 @@ import pool from '../db/pool';
 import { isUnknownExerciseError } from '../db/errors';
 import { withTransaction } from '../db/transaction';
 import { listWorkoutDetails, loadWorkoutDetail } from '../db/workoutDetail';
+import { addWorkoutExercise } from '../db/workoutExercises';
 import { getAuthUser, requireAuth } from '../middleware/auth';
 import { isCreateWorkoutBody, isUpdateWorkoutBody, parseId } from '../validation';
 import type {
@@ -64,6 +65,11 @@ workoutsRouter.post(
         for (const set of sets) {
           const setNumber = (countByExercise.get(set.exercise_id) ?? 0) + 1;
           countByExercise.set(set.exercise_id, setNumber);
+          // An exercise's first set also adds it to the workout's exercises, so they're ordered
+          // as they first appear in the list.
+          if (setNumber === 1) {
+            await addWorkoutExercise(client, workout.id, set.exercise_id);
+          }
           await client.query(
             'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit) VALUES ($1, $2, $3, $4, $5, $6)',
             [workout.id, set.exercise_id, setNumber, set.reps, set.weight, set.unit ?? 'lb']

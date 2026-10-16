@@ -4,7 +4,19 @@ import type { Exercise, PublicUser, WeightUnit, Workout, WorkoutSet } from '../s
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
-  await pool.query('TRUNCATE users, exercises, workouts, sets RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE users, exercises, workouts, workout_exercises, sets RESTART IDENTITY CASCADE');
+}
+
+// A set's exercise must be one of its workout's exercises (sets_workout_exercise_fkey), so the
+// helpers that insert sets directly add the workout_exercises row first, after the workout's other
+// exercises, like the routes do. ON CONFLICT DO NOTHING: already in the workout, nothing to add.
+async function addWorkoutExercise(workoutId: number, exerciseId: number): Promise<void> {
+  await pool.query(
+    `INSERT INTO workout_exercises (workout_id, exercise_id, position)
+     SELECT $1, $2, COALESCE(MAX(position), 0) + 1 FROM workout_exercises WHERE workout_id = $1
+     ON CONFLICT (workout_id, exercise_id) DO NOTHING`,
+    [workoutId, exerciseId]
+  );
 }
 
 // Inserts a user directly (not through /auth/signup) so a login test doesn't depend on signup working.
@@ -53,6 +65,7 @@ export async function createWorkout(
   if (!workout) {
     throw new Error('createWorkout: insert returned no row');
   }
+  await addWorkoutExercise(workout.id, exerciseId);
   await pool.query(
     'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, 1, 5, 100)',
     [workout.id, exerciseId]
@@ -83,6 +96,7 @@ export async function addSet(
   weight: number,
   unit: WeightUnit = 'lb'
 ): Promise<Pick<WorkoutSet, 'id'>> {
+  await addWorkoutExercise(workoutId, exerciseId);
   const result = await pool.query<Pick<WorkoutSet, 'id'>>(
     'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight, unit) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
     [workoutId, exerciseId, setNumber, reps, weight, unit]

@@ -3,6 +3,7 @@ import pool from '../db/pool';
 import { isUnknownExerciseError } from '../db/errors';
 import { withTransaction } from '../db/transaction';
 import { loadWorkoutDetail } from '../db/workoutDetail';
+import { addWorkoutExercise, removeWorkoutExerciseIfEmpty } from '../db/workoutExercises';
 import { lockWorkout } from '../db/workoutLock';
 import { getAuthUser } from '../middleware/auth';
 import { isNewSetInput, isUpdateSetBody, parseId, UPDATE_SET_KEYS } from '../validation';
@@ -45,6 +46,9 @@ setsRouter.post(
         if (!(await lockWorkout(client, workoutId, user.id))) {
           return false;
         }
+        // An exercise new to the workout goes after its other exercises; one already in it keeps
+        // its place. (Another user's custom exercise is rejected here, as a 400 below.)
+        await addWorkoutExercise(client, workoutId, exercise_id);
         // The new set's number: this exercise's highest in the workout + 1. An aggregate with no
         // GROUP BY always gives exactly one row, even over no sets, where MAX is NULL; COALESCE
         // turns that into 0, so an exercise's first set is 1.
@@ -173,6 +177,8 @@ setsRouter.delete(
          WHERE workout_id = $1 AND exercise_id = $2 AND set_number > $3`,
         [workoutId, set.exercise_id, set.set_number]
       );
+      // If that was the exercise's last set, it leaves the workout too.
+      await removeWorkoutExerciseIfEmpty(client, workoutId, set.exercise_id);
       return true;
     });
 

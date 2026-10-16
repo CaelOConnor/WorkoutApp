@@ -1,5 +1,6 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
+import { requestLogger } from './middleware/requestLogger';
 import healthRouter from './routes/health';
 import exercisesRouter from './routes/exercises';
 import workoutsRouter from './routes/workouts';
@@ -7,6 +8,11 @@ import authRouter from './routes/auth';
 
 const app = express();
 
+// First, so its timing covers everything after it. Not under Vitest (which sets NODE_ENV to
+// 'test'): hundreds of request lines would bury the test output.
+if (process.env.NODE_ENV !== 'test') {
+  app.use(requestLogger(console.log));
+}
 app.use(cors());
 app.use(express.json());
 

@@ -114,13 +114,20 @@ export async function seedSampleWorkouts(email: string, today: string): Promise<
 
       const extra = timesDone[session] * WEIGHT_STEP;
       timesDone[session] += 1;
-      for (const exercise of SESSIONS[session]) {
+      // entries() gives [index, value] pairs, so neither index needs a counter of its own.
+      for (const [exerciseIndex, exercise] of SESSIONS[session].entries()) {
+        const exerciseId = exerciseIds.get(exercise.name);
+        // The exercise joins the workout first (its sets must belong to one of the workout's
+        // exercises), in the session's order.
+        await client.query(
+          'INSERT INTO workout_exercises (workout_id, exercise_id, position) VALUES ($1, $2, $3)',
+          [workoutId, exerciseId, exerciseIndex + 1]
+        );
         // set_number is 1, 2, 3... within each exercise, as the API numbers them.
-        // entries() gives [index, value] pairs, so the index needs no counter of its own.
         for (const [index, reps] of exercise.reps.entries()) {
           await client.query(
             'INSERT INTO sets (workout_id, exercise_id, set_number, reps, weight) VALUES ($1, $2, $3, $4, $5)',
-            [workoutId, exerciseIds.get(exercise.name), index + 1, reps, exercise.startWeight + extra]
+            [workoutId, exerciseId, index + 1, reps, exercise.startWeight + extra]
           );
         }
       }

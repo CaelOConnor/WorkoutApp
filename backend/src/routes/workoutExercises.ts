@@ -42,12 +42,13 @@ workoutExercisesRouter.delete(
       if (!(await lockWorkout(client, workoutId, user.id))) {
         return 'no workout';
       }
-      // One statement, so the sets go all together or not at all. No renumbering: the other
-      // exercises' numbers never counted this one's sets.
-      const result = await client.query('DELETE FROM sets WHERE workout_id = $1 AND exercise_id = $2', [
-        workoutId,
-        exerciseId,
-      ]);
+      // Deleting the exercise's workout_exercises row deletes its sets too (the sets' foreign key
+      // to it is ON DELETE CASCADE), in one statement, so they go all together or not at all.
+      // No renumbering: the other exercises' set numbers and positions don't count this one.
+      const result = await client.query(
+        'DELETE FROM workout_exercises WHERE workout_id = $1 AND exercise_id = $2',
+        [workoutId, exerciseId]
+      );
       return result.rowCount === 0 ? 'no sets' : 'removed';
     });
 

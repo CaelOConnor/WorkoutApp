@@ -12,17 +12,17 @@ async function attachSets(workouts: WorkoutColumns[]): Promise<WorkoutDetail[]> 
   // pg sends a JS array as a Postgres array, and `= ANY($1)` matches any element of it, so one
   // placeholder covers every id. The ::int[] cast tells Postgres the array's element type.
   // workout_id is selected only for grouping below; it's stripped before the set is returned.
-  // Order: each exercise's sets together, by set_number, with the exercises in the order they
-  // were first added to the workout. MIN(s.id) OVER (PARTITION BY ...) is a window function: every
-  // row gets the lowest set id of its exercise in its workout (ids rise as sets are added), without
-  // collapsing the rows the way GROUP BY would. Sorting by it keeps an exercise's sets together.
-  // (Exercises in different workouts get different MINs, but sets are split by workout below anyway.)
+  // Order: each exercise's sets together, by set_number, with the exercises in their stored
+  // position in the workout (workout_exercises). The position doesn't depend on which sets still
+  // exist, so deleting an exercise's first set doesn't move it. (Positions are per workout, but
+  // sets are split by workout below anyway.)
   const setsResult = await pool.query<WorkoutDetailSet & { workout_id: number }>(
     `SELECT s.workout_id, s.id, s.exercise_id, e.name AS exercise_name, s.set_number, s.reps, s.weight, s.unit
      FROM sets s
+     JOIN workout_exercises we ON we.workout_id = s.workout_id AND we.exercise_id = s.exercise_id
      JOIN exercises e ON e.id = s.exercise_id
      WHERE s.workout_id = ANY($1::int[])
-     ORDER BY MIN(s.id) OVER (PARTITION BY s.workout_id, s.exercise_id), s.set_number`,
+     ORDER BY we.position, s.set_number`,
     [workouts.map((w) => w.id)]
   );
 

@@ -1,56 +1,26 @@
-import path from 'node:path';
-import { Client } from 'pg';
-import { runner } from 'node-pg-migrate';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { TEST_DATABASE_URL } from '../test-env';
+import {
+  dropScratchSchema,
+  insertRow as insertRowWith,
+  migrate as migrateWith,
+  resetScratchSchema,
+  scratchClient,
+  type MigrateOptions,
+} from './scratch-schema';
 
-// A data migration has to be tested against data written before it ran, which the normal test
-// database never has: global-setup runs every migration on empty tables. So this file builds its
-// own copy of the schema in a scratch Postgres schema (a namespace for tables inside the same
-// database), runs migrations only up to the one before this, inserts old-style rows, then runs
-// this migration and checks the result. The app's tables in `public` are never touched.
+// Tested in a scratch schema migrated to just before this migration (see scratch-schema.ts).
 
-const SCHEMA = 'migration_test';
 const MIGRATION = '1792176885655_per-exercise-set-numbers';
 // The previous migration's timestamp (1792088230086_custom-exercises).
 const BEFORE_MIGRATION = 1792088230086;
 const CONSTRAINT = 'sets_workout_exercise_set_number_key';
 
-// Its own connection rather than the app's pool: the runner sets search_path on the connection
-// it's given, so every query below on this client reads and writes the scratch schema.
-const client = new Client({ connectionString: TEST_DATABASE_URL });
-
-// The runner options this file varies; the rest are fixed in migrate().
-interface MigrateOptions {
-  direction: 'up' | 'down';
-  count?: number;
-  timestamp?: boolean;
-  file?: string;
-}
-
-async function migrate(options: MigrateOptions): Promise<void> {
-  await runner({
-    dbClient: client,
-    dir: path.join(__dirname, '../../migrations'),
-    migrationsTable: 'pgmigrations',
-    schema: SCHEMA,
-    createSchema: true,
-    log: () => {},
-    ...options,
-  });
-}
+const client = scratchClient();
+const migrate = (options: MigrateOptions) => migrateWith(client, options);
+const insertRow = (sql: string, params: unknown[]) => insertRowWith(client, sql, params);
 
 let exerciseIds: { squat: number; bench: number };
 let userId: number;
-
-async function insertRow(sql: string, params: unknown[]): Promise<number> {
-  const result = await client.query<{ id: number }>(`${sql} RETURNING id`, params);
-  const id = result.rows[0]?.id;
-  if (id === undefined) {
-    throw new Error('insert returned no row');
-  }
-  return id;
-}
 
 function createWorkout(): Promise<number> {
   return insertRow('INSERT INTO workouts (user_id) VALUES ($1)', [userId]);
@@ -77,15 +47,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+  await dropScratchSchema(client);
   await client.end();
 });
 
 // A fresh scratch schema for each test, migrated to just before this migration.
 beforeEach(async () => {
-  await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
-  // timestamp: true makes `count` mean "every migration up to this timestamp" rather than "this many".
-  await migrate({ direction: 'up', count: BEFORE_MIGRATION, timestamp: true });
+  await resetScratchSchema(client, BEFORE_MIGRATION);
 
   userId = await insertRow("INSERT INTO users (email, password_hash) VALUES ('a@test.com', 'x')", []);
   exerciseIds = {

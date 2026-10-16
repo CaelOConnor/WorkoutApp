@@ -989,6 +989,31 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
     expect(await setNumbersOf(otherWorkout.id)).toEqual([[squatId, 1]]);
   });
 
+  // The bug: exercises were ordered by their oldest remaining set, so deleting an exercise's first
+  // set could move its whole card below exercises added before its second set. On the phone it
+  // looked as if the exercise's later sets had been deleted too.
+  it("keeps the exercise's place in the workout when its first set is deleted", async () => {
+    // Built the way the detail screen does it: Squat logged, then "+ Add exercise" Bench, then
+    // "+ Add set" on Squat. Squat set 2 is newer than Bench set 1.
+    const benchId = (await createExercise('Bench')).id;
+    const day = await createWorkoutOn(lifter.id, '2026-09-05');
+    const squat1 = await addSet(day.id, squatId, 1, 5, 100);
+    await addSet(day.id, benchId, 1, 8, 60);
+    await addSet(day.id, squatId, 2, 3, 110);
+
+    const res = await request(app)
+      .delete(`/workouts/${day.id}/sets/${squat1.id}`)
+      .set('Authorization', authHeader(lifter.id));
+    expect(res.status).toBe(204);
+
+    const after = await request(app).get(`/workouts/${day.id}`).set('Authorization', authHeader(lifter.id));
+    const detail: WorkoutDetail = after.body;
+    expect(detail.sets.map((s) => [s.exercise_name, s.set_number, s.reps])).toEqual([
+      ['Squat', 1, 3],
+      ['Bench', 1, 8],
+    ]);
+  });
+
   it("keeps a workout in both GET routes after its last set is deleted", async () => {
     // otherWorkout has only the one set createWorkout gave it.
     const onlySet = await pool.query<Pick<WorkoutSet, 'id'>>('SELECT id FROM sets WHERE workout_id = $1', [
@@ -1159,6 +1184,32 @@ describe('POST /workouts/:id/sets with a valid token', () => {
     ]);
     // unit was missing, so it gets the column's default.
     expect(body.sets[1]).toMatchObject({ exercise_id: squatId, set_number: 2, reps: 2, weight: 130, unit: 'lb' });
+  });
+
+  // An exercise leaves the workout when its last set goes (the app has no card for an exercise
+  // without sets), so adding it again puts it at the end, like any exercise new to the workout.
+  it.each([
+    ['its last set was deleted', 'set'],
+    ['it was removed', 'exercise'],
+  ])('adds an exercise after the others when %s and it comes back', async (_label, how) => {
+    await addSet(workout.id, benchId, 1, 8, 135);
+    const [squat1 = -1] = await setIdsOf(workout.id);
+    const removePath =
+      how === 'set' ? `/workouts/${workout.id}/sets/${squat1}` : `/workouts/${workout.id}/exercises/${squatId}`;
+    const removed = await request(app).delete(removePath).set('Authorization', authHeader(lifter.id));
+    expect(removed.status).toBeLessThan(300);
+
+    const res = await request(app)
+      .post(`/workouts/${workout.id}/sets`)
+      .set('Authorization', authHeader(lifter.id))
+      .send({ exercise_id: squatId, reps: 5, weight: 100 });
+
+    expect(res.status).toBe(201);
+    const body: WorkoutDetail = res.body;
+    expect(body.sets.map((s) => [s.exercise_name, s.set_number])).toEqual([
+      ['Bench', 1],
+      ['Squat', 1],
+    ]);
   });
 
   it('gives adds sent at the same time distinct, consecutive numbers', async () => {

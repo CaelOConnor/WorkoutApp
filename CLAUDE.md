@@ -19,7 +19,7 @@ backend/
   src/validation.ts     Runtime type guards for request bodies
   src/types/models.ts   Shared types (no server-only imports; mobile will reuse)
   src/db/pool.ts        pg Pool;  src/db/seed.ts  seed data;  src/db/ also has shared queries
-  migrations/           SQL migrations (Up/Down); tables: users, exercises, workouts, sets
+  migrations/           SQL migrations (Up/Down); tables: users, exercises, workouts, workout_exercises, sets
   test/                 Vitest tests
 mobile/src/app/         Expo Router screens; components/, constants/, hooks/
 mobile/src/api/         API client (request<T> + error classes), response type guards, API URL
