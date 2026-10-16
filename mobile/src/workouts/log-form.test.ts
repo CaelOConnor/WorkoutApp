@@ -175,7 +175,10 @@ describe('hasChanges', () => {
 });
 
 describe('validateLogForm', () => {
-  it('numbers sets 1..n per exercise, in form order, and builds the POST body', () => {
+  // No set_number in the body: the server numbers each exercise's sets in the order they're sent
+  // (and rejects a body that has one), so form order is all that matters. toEqual fails on any
+  // extra key, so a set_number left in would fail this test.
+  it('builds the POST body with the sets in form order, without set numbers', () => {
     let form = withSquat('5', '225');
     const squatKey = exerciseKey(form, 0);
     form = apply(form, { type: 'addSet', exerciseKey: squatKey }, { type: 'addExercise', exercise: BENCH });
@@ -198,9 +201,9 @@ describe('validateLogForm', () => {
     expect(result.body).toEqual({
       date: TODAY,
       sets: [
-        { exercise_id: 2, set_number: 1, reps: 5, weight: 225, unit: 'lb' },
-        { exercise_id: 2, set_number: 2, reps: 3, weight: 225, unit: 'lb' },
-        { exercise_id: 1, set_number: 1, reps: 8, weight: 60.5, unit: 'kg' },
+        { exercise_id: 2, reps: 5, weight: 225, unit: 'lb' },
+        { exercise_id: 2, reps: 3, weight: 225, unit: 'lb' },
+        { exercise_id: 1, reps: 8, weight: 60.5, unit: 'kg' },
       ],
     });
   });

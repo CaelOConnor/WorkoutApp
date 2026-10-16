@@ -4,11 +4,13 @@ import type { WorkoutDetailSet } from '@shared/models';
 export interface ExerciseGroup {
   exerciseId: number;
   exerciseName: string;
-  sets: WorkoutDetailSet[]; // in workout order (the API sorts by set_number)
+  sets: WorkoutDetailSet[]; // in the API's order: by set_number within the exercise
 }
 
-// One group per exercise, in the order each exercise first appears. Grouped by exercise_id, not
-// name: a custom exercise can share a built-in one's name, and "Remove exercise" deletes by id.
+// One group per exercise, in the order each exercise first appears. The API already sends each
+// exercise's sets together (exercises in the order they were added), so this just splits them into
+// cards. Grouped by exercise_id, not name: a custom exercise can share a built-in one's name, and
+// "Remove exercise" deletes by id.
 export function groupSetsByExercise(sets: readonly WorkoutDetailSet[]): ExerciseGroup[] {
   // A Map remembers insertion order, so its values come out in first-appearance order.
   const groups = new Map<number, ExerciseGroup>();
@@ -28,16 +30,17 @@ export function groupSetsByExercise(sets: readonly WorkoutDetailSet[]): Exercise
 }
 
 // 'Set 1 · 5 reps × 225 lb'. `index` is the set's position within its exercise (0-based), which
-// is what the user sees as the set number. The stored set_number can't be shown as is: it has
-// gaps after deletes, and its scheme depends on how the set was added (1..n per exercise when a
-// workout is logged, but the workout's highest + 1 for "+ Add set"; see ROADMAP.md).
+// is what the user sees as the set number. The server keeps set_number equal to that position
+// (1..n per exercise, renumbered after a delete; see ROADMAP.md), but the screen relies on the
+// order it has, not on the stored number.
 export function formatSetLine(set: WorkoutDetailSet, index: number): string {
   const reps = `${set.reps} ${set.reps === 1 ? 'rep' : 'reps'}`;
   return `Set ${index + 1} · ${reps} × ${set.weight} ${set.unit}`;
 }
 
 // The set that's in `after` but not in `before`: the one a POST .../sets just added. Compared by
-// id rather than position, since the server sorts sets by set_number.
+// id rather than position, since the new set goes after its exercise's last set, which isn't
+// necessarily the end of the list.
 export function addedSet(
   before: readonly WorkoutDetailSet[],
   after: readonly WorkoutDetailSet[]

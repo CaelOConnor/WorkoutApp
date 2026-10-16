@@ -83,7 +83,7 @@ export function parseSetForm(form: SetForm): FormResult<SetValues> {
 }
 
 // "+ Add set" repeats the exercise's last set, which is usually what comes next; the user edits
-// it if not. No set_number: the server uses the workout's highest + 1.
+// it if not. No set_number: the server makes it the exercise's last set (its highest + 1).
 export function addSetBodyFrom(lastSet: WorkoutDetailSet): AddSetBody {
   return {
     exercise_id: lastSet.exercise_id,

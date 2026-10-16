@@ -141,16 +141,17 @@ export function validateLogForm(form: LogForm): LogValidation {
   const sets: NewSetInput[] = [];
   let validSetCount = 0;
 
+  // Sets go in form order with no set_number: the server numbers each exercise's sets 1..n in
+  // the order they arrive.
   for (const exercise of form.exercises) {
-    // forEach's index gives each set its number within its exercise: 1..n per exercise.
-    exercise.sets.forEach((set, index) => {
+    for (const set of exercise.sets) {
       setErrors.set(set.key, { reps: repsError(set.reps), weight: weightError(set.weight) });
       const parsed = parseSetForm(set);
       if (parsed.ok) {
         validSetCount += 1;
-        sets.push({ exercise_id: exercise.exerciseId, set_number: index + 1, ...parsed.value });
+        sets.push({ exercise_id: exercise.exerciseId, ...parsed.value });
       }
-    });
+    }
   }
 
   const allValid = dateError === null && validSetCount === setErrors.size;

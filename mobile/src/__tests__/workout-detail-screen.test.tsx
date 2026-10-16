@@ -37,7 +37,7 @@ const EXERCISES: Exercise[] = [
   { id: 3, name: 'Deadlift', muscle_group: 'Back', created_by: null },
 ];
 
-// Squat, Squat, Bench. Bench's stored set_number is 3, but it's shown as its card's "Set 1".
+// Squat 1-2, then Bench 1: numbered per exercise, as the server stores them.
 function initialWorkout(): WorkoutDetail {
   return {
     id: 3,
@@ -46,7 +46,7 @@ function initialWorkout(): WorkoutDetail {
     sets: [
       { id: 31, set_number: 1, reps: 5, weight: 225, unit: 'lb', ...SQUAT },
       { id: 32, set_number: 2, reps: 5, weight: 235, unit: 'lb', ...SQUAT },
-      { id: 33, set_number: 3, reps: 8, weight: 135, unit: 'lb', ...BENCH },
+      { id: 33, set_number: 1, reps: 8, weight: 135, unit: 'lb', ...BENCH },
     ],
   };
 }
@@ -122,7 +122,8 @@ function fakeServer() {
           id: 99,
           exercise_id,
           exercise_name: name,
-          set_number: Math.max(...w.sets.map((s) => s.set_number)) + 1,
+          // Like the real server: after this exercise's last set (1 if it has none yet).
+          set_number: w.sets.filter((s) => s.exercise_id === exercise_id).length + 1,
           reps,
           weight,
           unit: unit ?? 'lb',
@@ -147,7 +148,18 @@ function fakeServer() {
       }));
     });
     routes[`DELETE /workouts/3/sets/${id}`] = write(() => {
-      save((w) => ({ ...w, sets: w.sets.filter((s) => s.id !== id) }));
+      save((w) => {
+        const deleted = w.sets.find((s) => s.id === id);
+        // Like the real server: the same exercise's later sets move down one.
+        const sets = w.sets
+          .filter((s) => s.id !== id)
+          .map((s) =>
+            deleted && s.exercise_id === deleted.exercise_id && s.set_number > deleted.set_number
+              ? { ...s, set_number: s.set_number - 1 }
+              : s
+          );
+        return { ...w, sets };
+      });
       return noContentResponse();
     });
   }

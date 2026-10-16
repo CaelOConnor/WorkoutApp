@@ -30,11 +30,12 @@ describe('groupSetsByExercise', () => {
   });
 
   it('groups by exercise in order of first appearance, keeping set order within each', () => {
+    // Interleaved: the API sends each exercise's sets together, but grouping mustn't rely on it.
     const sets = [
       set({ id: 10, set_number: 1, ...BENCH }),
-      set({ id: 11, set_number: 2, ...SQUAT }),
-      set({ id: 12, set_number: 3, ...BENCH }),
-      set({ id: 13, set_number: 4, ...SQUAT }),
+      set({ id: 11, set_number: 1, ...SQUAT }),
+      set({ id: 12, set_number: 2, ...BENCH }),
+      set({ id: 13, set_number: 2, ...SQUAT }),
     ];
 
     const groups = groupSetsByExercise(sets);
@@ -57,7 +58,8 @@ describe('groupSetsByExercise', () => {
 
 describe('formatSetLine', () => {
   it('numbers by position, not the stored set_number', () => {
-    // Stored set_number 7 (gaps after deletes, or interleaved with another exercise).
+    // A stored number that disagrees with the position. The server keeps the two equal now, but
+    // the line is built from the position the screen has, so it can't show a stale number.
     const line = formatSetLine(set({ set_number: 7, reps: 5, weight: 225, unit: 'lb' }), 0);
 
     expect(line).toBe('Set 1 · 5 reps × 225 lb');

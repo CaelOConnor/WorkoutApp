@@ -48,7 +48,9 @@ function fakeServer() {
         id: 70 + i,
         exercise_id: s.exercise_id,
         exercise_name: exercises.find((e) => e.id === s.exercise_id)?.name ?? '?',
-        set_number: s.set_number,
+        // Like the real server: each exercise's sets are 1, 2, 3... in the order they were sent,
+        // i.e. how many sets of this exercise there are up to and including this one.
+        set_number: body.sets.slice(0, i + 1).filter((t) => t.exercise_id === s.exercise_id).length,
         reps: s.reps,
         weight: s.weight,
         unit: s.unit ?? 'lb',
@@ -170,9 +172,9 @@ it('logs a workout end to end and opens it, with back going to the updated histo
       date: '2026-10-13',
       notes: 'Heavy day',
       sets: [
-        { exercise_id: 2, set_number: 1, reps: 5, weight: 225, unit: 'lb' },
-        { exercise_id: 2, set_number: 2, reps: 3, weight: 225, unit: 'lb' },
-        { exercise_id: 1, set_number: 1, reps: 8, weight: 60.5, unit: 'kg' },
+        { exercise_id: 2, reps: 5, weight: 225, unit: 'lb' },
+        { exercise_id: 2, reps: 3, weight: 225, unit: 'lb' },
+        { exercise_id: 1, reps: 8, weight: 60.5, unit: 'kg' },
       ],
     },
   ]);
@@ -198,7 +200,7 @@ it('removes a set and an exercise before saving', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
 
   await waitFor(() => expect(saved).toHaveLength(1));
-  expect(saved[0]?.sets).toEqual([{ exercise_id: 2, set_number: 1, reps: 5, weight: 225, unit: 'lb' }]);
+  expect(saved[0]?.sets).toEqual([{ exercise_id: 2, reps: 5, weight: 225, unit: 'lb' }]);
 });
 
 it('shows validation errors next to the fields and saves nothing while any set is invalid', async () => {
@@ -364,7 +366,7 @@ describe('creating an exercise from the picker', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
     await waitFor(() => expect(saved).toHaveLength(1));
     expect(saved[0]?.sets).toEqual([
-      { exercise_id: 103, set_number: 1, reps: 12, weight: 30, unit: 'lb' },
+      { exercise_id: 103, reps: 12, weight: 30, unit: 'lb' },
     ]);
   });
 
