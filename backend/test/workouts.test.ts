@@ -989,6 +989,26 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
     expect(await setNumbersOf(otherWorkout.id)).toEqual([[squatId, 1]]);
   });
 
+  it("changes only the later sets' set_number when set 1 is deleted, not their reps, weight or unit", async () => {
+    // Squat 1 (createWorkout: 5 × 100 lb) and 2 (`set`: 3 × 120 lb), plus a Squat 3 that differs
+    // in every column, so a renumbering that touched anything else would show.
+    const squat3 = await addSet(workout.id, squatId, 3, 8, 52.5, 'kg');
+    const [squat1 = -1] = await setIdsOf(workout.id);
+    const set2Before = await readSet(set.id);
+    const set3Before = await readSet(squat3.id);
+
+    const res = await request(app)
+      .delete(`/workouts/${workout.id}/sets/${squat1}`)
+      .set('Authorization', authHeader(lifter.id));
+
+    expect(res.status).toBe(204);
+    // Straight from the table: each row is as it was, apart from moving up one place.
+    expect(await readSet(set.id)).toEqual({ ...set2Before, set_number: 1 });
+    expect(await readSet(squat3.id)).toEqual({ ...set3Before, set_number: 2 });
+    expect(await readSet(set.id)).toMatchObject({ reps: 3, weight: 120, unit: 'lb' });
+    expect(await readSet(squat3.id)).toMatchObject({ reps: 8, weight: 52.5, unit: 'kg' });
+  });
+
   // The bug: exercises were ordered by their oldest remaining set, so deleting an exercise's first
   // set could move its whole card below exercises added before its second set. On the phone it
   // looked as if the exercise's later sets had been deleted too.
