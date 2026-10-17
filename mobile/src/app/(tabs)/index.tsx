@@ -1,5 +1,5 @@
 import type { WorkoutDetail } from '@shared/models';
-import { Stack, useRouter } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, SectionList, StyleSheet, View } from 'react-native';
 
@@ -36,22 +36,17 @@ export default function HistoryScreen() {
   return (
     <ThemedView style={styles.screen}>
       {/* Header buttons for this screen. headerLeft/headerRight work on both iOS and Android.
-          The home screen has no back button, so its left side is free for logging out. */}
-      <Stack.Screen
+          The home screen has no back button, so its left side is free for logging out.
+          Tabs.Screen, not Stack.Screen: this screen is a tab, so its options go to the tabs. */}
+      <Tabs.Screen
         options={{
           headerLeft: () => <TextButton label="Log out" onPress={() => void logout()} />,
           headerRight: () => (
-            <View style={styles.headerButtons}>
-              <TextButton
-                label="Progress"
-                onPress={() => guard.navigate(() => router.push('/progress'))}
-              />
-              <TextButton
-                label="+ Log workout"
-                accessibilityLabel="Log workout"
-                onPress={() => guard.navigate(() => router.push('/workouts/new'))}
-              />
-            </View>
+            <TextButton
+              label="+ Log workout"
+              accessibilityLabel="Log workout"
+              onPress={() => guard.navigate(() => router.push('/workouts/new'))}
+            />
           ),
         }}
       />
@@ -153,7 +148,6 @@ function EmptyState() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  headerButtons: { flexDirection: 'row', gap: Spacing.three },
   // Lets the empty state fill the screen, so it can be centered.
   emptyContent: { flexGrow: 1 },
   sectionHeader: {

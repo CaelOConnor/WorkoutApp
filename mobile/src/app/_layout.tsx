@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -7,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { createQueryClient, refetchOnAppForeground } from '@/api/query-client';
 import { AuthProvider, useAuth } from '@/auth/auth-provider';
 import { SplashScreenController } from '@/auth/splash-screen-controller';
+import { tabTitle } from '@/navigation/tabs';
 
 // Once, when the app loads: TanStack Query refetches stale data when the app comes back to the
 // foreground.
@@ -61,14 +63,24 @@ function RootNavigator() {
   return (
     <Stack>
       <Stack.Protected guard={signedIn}>
-        <Stack.Screen name="index" options={{ title: 'Workouts' }} />
+        {/* The tab bar (History, Progress, Templates) is one screen of this Stack, so the
+            screens below open over it, tab bar included. Its own header is hidden: each tab
+            draws one. The title is never shown here, but iOS uses it as the back button's
+            label on the next screen, so it follows the focused tab ("Workouts", "Progress"...).
+            getFocusedRouteNameFromRoute reads which tab is focused from the tabs' nested state. */}
+        <Stack.Screen
+          name="(tabs)"
+          options={({ route }) => ({
+            headerShown: false,
+            title: tabTitle(getFocusedRouteNameFromRoute(route)),
+          })}
+        />
         {/* Every signed-in screen must be listed here: a route left out of all the
             Stack.Protected groups would be reachable while signed out. */}
         <Stack.Screen name="workouts/new" options={{ title: 'Log workout' }} />
         <Stack.Screen name="workouts/[id]/index" options={{ title: 'Workout' }} />
         <Stack.Screen name="workouts/[id]/sets/[setId]" options={SHEET_OPTIONS} />
         <Stack.Screen name="workouts/[id]/edit" options={SHEET_OPTIONS} />
-        <Stack.Screen name="progress/index" options={{ title: 'Progress' }} />
         {/* The screen replaces this title with the exercise's name once it has loaded. */}
         <Stack.Screen name="progress/[exerciseId]" options={{ title: 'Progress' }} />
       </Stack.Protected>

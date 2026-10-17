@@ -76,11 +76,12 @@ async function pointRows() {
 }
 
 describe('the exercise list (/progress)', () => {
-  it('opens from the history header and lists logged exercises, most recent first', async () => {
+  it('opens from the Progress tab and lists logged exercises, most recent first', async () => {
     server({ 'GET /exercises/logged': () => jsonResponse(200, LOGGED) });
     const app = await renderApp();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Progress' }));
+    // The tab bar item's accessible name (see tabs.test.tsx).
+    await fireEvent.press(screen.getByRole('button', { name: 'Progress, tab, 2 of 3' }));
 
     expect(app.getPathname()).toBe('/progress');
     const rows = await screen.findAllByRole('button', { name: /last logged/ });
