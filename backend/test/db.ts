@@ -4,7 +4,9 @@ import type { Exercise, PublicUser, WeightUnit, Workout, WorkoutSet } from '../s
 
 // Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
 export async function resetDb(): Promise<void> {
-  await pool.query('TRUNCATE users, exercises, workouts, workout_exercises, sets RESTART IDENTITY CASCADE');
+  await pool.query(
+    'TRUNCATE users, exercises, workouts, workout_exercises, sets, templates, template_exercises RESTART IDENTITY CASCADE'
+  );
 }
 
 // A set's exercise must be one of its workout's exercises (sets_workout_exercise_fkey), so the

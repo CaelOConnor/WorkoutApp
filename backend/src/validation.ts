@@ -11,6 +11,7 @@ import type {
   CreateWorkoutBody,
   NewSetInput,
   ProgressQuery,
+  TemplateBody,
   TokenPayload,
   UpdateSetBody,
   UpdateWorkoutBody,
@@ -232,6 +233,70 @@ export function parseCreateExerciseBody(value: unknown): Required<CreateExercise
   }
   // `||` (not `??`): an empty string is falsy, so a blank muscle group becomes null.
   return { name, muscle_group: trimmedGroup || null };
+}
+
+// templates.name is VARCHAR(100); template_exercises.set_count has CHECK (1 to 20).
+const MAX_TEMPLATE_NAME_LENGTH = 100;
+const MAX_TEMPLATE_SET_COUNT = 20;
+
+export const TEMPLATE_NAME_ERROR = 'Template names must be 1 to 100 characters';
+export const INVALID_TEMPLATE_ERROR = 'Invalid template body';
+
+const TEMPLATE_BODY_KEYS = ['name', 'exercises'] as const satisfies readonly (keyof TemplateBody)[];
+const TEMPLATE_EXERCISE_KEYS = ['exercise_id', 'set_count'] as const satisfies readonly (keyof TemplateExerciseInput)[];
+
+type TemplateExerciseInput = TemplateBody['exercises'][number];
+
+// A discriminated union on `ok`: after `if (result.ok)`, TypeScript knows which of the two
+// shapes it is, so `result.value` and `result.error` can only be read where they exist.
+export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+// Every key of `value` is one of `allowed`. Widening to readonly string[] lets includes() take
+// any string, as in isNewSetInput.
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function isTemplateExerciseInput(value: unknown): value is TemplateExerciseInput {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, TEMPLATE_EXERCISE_KEYS) &&
+    isPositiveInteger(value.exercise_id) &&
+    isPositiveInteger(value.set_count) &&
+    value.set_count <= MAX_TEMPLATE_SET_COUNT
+  );
+}
+
+// unknown -> TemplateBody with the name trimmed, or the error message for a 400.
+// A bad name gets its own message (the app shows it next to the name field); anything else is
+// something the app builds itself, so one generic message is enough.
+export function parseTemplateBody(value: unknown): ParseResult<TemplateBody> {
+  const invalid = { ok: false, error: INVALID_TEMPLATE_ERROR } as const;
+  if (!isRecord(value) || !hasOnlyKeys(value, TEMPLATE_BODY_KEYS)) {
+    return invalid;
+  }
+  // Checked before the name, so a body that's wrong in both ways gets the generic message.
+  const { exercises } = value;
+  if (!Array.isArray(exercises) || exercises.length === 0 || !exercises.every(isTemplateExerciseInput)) {
+    return invalid;
+  }
+  // An exercise at most once (the table's primary key would reject it as a 500 otherwise).
+  // A Set keeps one of each value, so a duplicate makes it smaller than the array.
+  if (new Set(exercises.map((e) => e.exercise_id)).size !== exercises.length) {
+    return invalid;
+  }
+  if (typeof value.name !== 'string') {
+    return { ok: false, error: TEMPLATE_NAME_ERROR };
+  }
+  const name = value.name.trim();
+  if (name.length === 0 || characterCount(name) > MAX_TEMPLATE_NAME_LENGTH) {
+    return { ok: false, error: TEMPLATE_NAME_ERROR };
+  }
+  // Rebuilt rather than returned as-is: only the checked keys go through.
+  return {
+    ok: true,
+    value: { name, exercises: exercises.map(({ exercise_id, set_count }) => ({ exercise_id, set_count })) },
+  };
 }
 
 // unknown -> AuthBody

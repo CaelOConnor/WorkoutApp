@@ -4,6 +4,7 @@ import { requestLogger } from './middleware/requestLogger';
 import healthRouter from './routes/health';
 import exercisesRouter from './routes/exercises';
 import workoutsRouter from './routes/workouts';
+import templatesRouter from './routes/templates';
 import authRouter from './routes/auth';
 
 const app = express();
@@ -20,6 +21,7 @@ app.use(express.json());
 app.use('/', healthRouter);
 app.use('/exercises', exercisesRouter);
 app.use('/workouts', workoutsRouter);
+app.use('/templates', templatesRouter);
 app.use('/auth', authRouter);
 
 // Catches anything a route throws or rejects with (e.g. GET /exercises when the DB is down),

@@ -52,6 +52,20 @@ export interface WorkoutSet {
   unit: WeightUnit;
 }
 
+// A reusable workout plan (e.g. "Leg day"): exercises in order, each with a number of sets.
+export interface Template {
+  id: number;
+  user_id: number;
+  name: string;
+}
+
+export interface TemplateExercise {
+  template_id: number;
+  exercise_id: number;
+  position: number; // only compared, never shown; the API returns exercises in this order
+  set_count: number; // 1 to 20
+}
+
 // ---------- API request bodies ----------
 
 // One set in POST /workouts. No set_number: the server numbers each exercise's sets 1, 2, 3...
@@ -101,6 +115,14 @@ export interface CreateExerciseBody {
   muscle_group?: string | null;
 }
 
+// POST /templates (and, from the next step, PUT /templates/:id, which replaces the whole template).
+// The name is trimmed by the server. Exercises are in the order the log screen will show them;
+// at least one, and each exercise at most once. Position isn't sent: it's the array order.
+export interface TemplateBody {
+  name: string;
+  exercises: Pick<TemplateExercise, 'exercise_id' | 'set_count'>[];
+}
+
 export interface AuthBody {
   email: string;
   password: string;
@@ -140,6 +162,17 @@ export type WorkoutDetailSet = Pick<
 // No user_id: the caller can only ever see their own workouts, so it would add nothing.
 export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {
   sets: WorkoutDetailSet[];
+};
+
+// One exercise of a TemplateDetail, with its name for display.
+export type TemplateDetailExercise = Pick<TemplateExercise, 'exercise_id' | 'set_count'> & {
+  exercise_name: string;
+};
+
+// A template with its exercises in order. POST /templates and GET /templates/:id return one;
+// GET /templates returns an array of them, by name ignoring case. No user_id, as in WorkoutDetail.
+export type TemplateDetail = Pick<Template, 'id' | 'name'> & {
+  exercises: TemplateDetailExercise[];
 };
 
 // One workout day of one exercise. Only sets with 1+ reps count, every weight is converted to the

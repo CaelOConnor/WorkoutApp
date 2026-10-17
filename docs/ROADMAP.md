@@ -74,6 +74,9 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
   - Positions aren't `DEFERRABLE`: editing a template will replace all its rows in one locked transaction rather than swap positions.
   - The exercise FK has no cascade, so deleting a custom exercise used by a template is a 23503: one more case for the "edit and delete custom exercises" decision above.
   - Tests in `test/migrations/templates.test.ts`.
+- [x] `POST /templates`, `GET /templates`, `GET /templates/:id` (router `src/routes/templates.ts`, queries in `src/db/templates.ts`, `requireAuth` on the whole router). Body `TemplateBody`: `{ name, exercises: [{ exercise_id, set_count }] }`, at least one exercise, each at most once, `set_count` 1 to 20, no unknown keys; the name is trimmed, 1 to 100 code points. Responses are `TemplateDetail` (`{ id, name, exercises: [{ exercise_id, exercise_name, set_count }] }`, exercises in order); the list is sorted by name ignoring case, then id.
+  - 400 `Template names must be 1 to 100 characters` for a bad name (for the app to show), 400 `Invalid template body` for anything else (`parseTemplateBody` returns `{ ok, value | error }`), 400 `Unknown exercise_id` for a missing exercise or another user's custom one (the template constraints are in `UNKNOWN_EXERCISE_CONSTRAINTS`), 409 for a name the caller already uses ignoring case (the unique index alone; also settles two identical requests at once). Another user's template is a 404 like a missing one.
+  - Exercises are written in one `INSERT ... SELECT FROM unnest(...) WITH ORDINALITY`, whose row numbers are the positions. Tests in `test/templates.test.ts`.
 - [ ] Save a reusable workout (e.g. "leg day") as a list of exercises.
 - [ ] Start a new workout from a template so only the numbers need filling in.
 
