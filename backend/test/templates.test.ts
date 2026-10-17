@@ -284,3 +284,220 @@ describe('GET /templates/:id', () => {
     expect(res.body).toEqual({ error: 'Invalid template id' });
   });
 });
+
+describe('PUT /templates/:id', () => {
+  let legs: TemplateDetail;
+
+  beforeEach(async () => {
+    legs = await createTemplate({
+      name: 'Leg day',
+      exercises: [
+        { exercise_id: squat, set_count: 3 },
+        { exercise_id: bench, set_count: 2 },
+      ],
+    });
+  });
+
+  function put(id: number | string, body: object, userId = lifter.id) {
+    return request(app).put(`/templates/${id}`).set('Authorization', authHeader(userId)).send(body);
+  }
+
+  // What GET /templates/:id returns now, to check what a request did or didn't change.
+  async function current(id: number): Promise<TemplateDetail> {
+    return (await request(app).get(`/templates/${id}`).set('Authorization', authHeader(lifter.id))).body;
+  }
+
+  it('returns 401 without a token', async () => {
+    const res = await request(app)
+      .put(`/templates/${legs.id}`)
+      .send({ name: 'Legs', exercises: [{ exercise_id: squat, set_count: 3 }] });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('replaces the name and the whole exercise list, and returns 200 with the template', async () => {
+    const lunge = (await createExercise('Lunge')).id;
+
+    // Reordered (Bench first), a set count changed, Squat dropped and Lunge added.
+    const res = await put(legs.id, {
+      name: ' Legs & push ',
+      exercises: [
+        { exercise_id: bench, set_count: 5 },
+        { exercise_id: lunge, set_count: 2 },
+      ],
+    });
+
+    const expected: TemplateDetail = {
+      id: legs.id,
+      name: 'Legs & push',
+      exercises: [
+        { exercise_id: bench, exercise_name: 'Bench Press', set_count: 5 },
+        { exercise_id: lunge, exercise_name: 'Lunge', set_count: 2 },
+      ],
+    };
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(expected);
+    expect(await current(legs.id)).toEqual(expected);
+  });
+
+  it("can swap two exercises (each takes the other one's position)", async () => {
+    const res = await put(legs.id, {
+      name: 'Leg day',
+      exercises: [
+        { exercise_id: bench, set_count: 2 },
+        { exercise_id: squat, set_count: 3 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.exercises.map((e: { exercise_id: number }) => e.exercise_id)).toEqual([bench, squat]);
+  });
+
+  it("keeps its own name, or changes only the name's case, without a 409", async () => {
+    const same = await put(legs.id, { name: 'Leg day', exercises: [{ exercise_id: squat, set_count: 4 }] });
+    const recased = await put(legs.id, { name: 'LEG DAY', exercises: [{ exercise_id: squat, set_count: 4 }] });
+
+    expect(same.status).toBe(200);
+    expect(recased.status).toBe(200);
+    expect(recased.body.name).toBe('LEG DAY');
+  });
+
+  it("returns 409 for the name of the caller's other template, and changes nothing", async () => {
+    await createTemplate({ name: 'Push', exercises: [{ exercise_id: bench, set_count: 3 }] });
+
+    const res = await put(legs.id, { name: 'push', exercises: [{ exercise_id: bench, set_count: 1 }] });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'A template named "push" already exists' });
+    expect(await current(legs.id)).toEqual(legs);
+  });
+
+  it('returns 400 for an unknown exercise, and changes nothing', async () => {
+    const res = await put(legs.id, {
+      name: 'Renamed',
+      exercises: [
+        { exercise_id: bench, set_count: 1 },
+        { exercise_id: 99999, set_count: 1 },
+      ],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
+    // The rename and the deleted rows were rolled back with the failed insert.
+    expect(await current(legs.id)).toEqual(legs);
+  });
+
+  it("returns 400 for another user's custom exercise, and changes nothing", async () => {
+    const theirs = (await createExercise('Their Lunge', other.id)).id;
+
+    const res = await put(legs.id, { name: 'Leg day', exercises: [{ exercise_id: theirs, set_count: 3 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown exercise_id' });
+    expect(await current(legs.id)).toEqual(legs);
+  });
+
+  it('validates the body like POST', async () => {
+    const badName = await put(legs.id, { name: ' ', exercises: [{ exercise_id: squat, set_count: 3 }] });
+    const noExercises = await put(legs.id, { name: 'Leg day', exercises: [] });
+
+    expect(badName.status).toBe(400);
+    expect(badName.body).toEqual({ error: 'Template names must be 1 to 100 characters' });
+    expect(noExercises.status).toBe(400);
+    expect(noExercises.body).toEqual({ error: 'Invalid template body' });
+    expect(await current(legs.id)).toEqual(legs);
+  });
+
+  it("returns 404 for another user's template or a missing one, and changes nothing", async () => {
+    const body = { name: 'Mine now', exercises: [{ exercise_id: squat, set_count: 1 }] };
+
+    const theirs = await put(legs.id, body, other.id);
+    const missing = await put(99999, body);
+
+    expect(theirs.status).toBe(404);
+    expect(theirs.body).toEqual({ error: 'Template not found' });
+    expect(missing.status).toBe(404);
+    expect(await current(legs.id)).toEqual(legs);
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const res = await put('abc', { name: 'Leg day', exercises: [{ exercise_id: squat, set_count: 3 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid template id' });
+  });
+
+  it('applies edits sent at once one after another, so each succeeds and one wins whole', async () => {
+    // Each edit deletes the template's rows and inserts new ones. Without a lock, an edit that
+    // waits on another's DELETE doesn't see the rows that edit then inserts, so its own INSERT
+    // collides with them (a 500). The lock makes each edit wait for the previous one to commit.
+    // Like the set-numbering tests, a race can pass by luck; this guards the lock, not proves it.
+    const bodies = [1, 2, 3, 4, 5].map((setCount) => ({
+      name: 'Leg day',
+      exercises: [
+        { exercise_id: bench, set_count: setCount },
+        { exercise_id: squat, set_count: setCount },
+      ],
+    }));
+
+    const results = await Promise.all(bodies.map((body) => put(legs.id, body)));
+
+    expect(results.map((res) => res.status)).toEqual([200, 200, 200, 200, 200]);
+    // Whichever edit committed last, the template is entirely that edit: both exercises have the
+    // same set count, never a mix of two edits.
+    const final = await current(legs.id);
+    expect(final.exercises).toHaveLength(2);
+    expect(final.exercises[0]?.set_count).toBe(final.exercises[1]?.set_count);
+  });
+});
+
+describe('DELETE /templates/:id', () => {
+  let legs: TemplateDetail;
+
+  beforeEach(async () => {
+    legs = await createTemplate({ name: 'Leg day', exercises: [{ exercise_id: squat, set_count: 3 }] });
+  });
+
+  function del(id: number | string, userId = lifter.id) {
+    return request(app).delete(`/templates/${id}`).set('Authorization', authHeader(userId));
+  }
+
+  it('returns 401 without a token', async () => {
+    const res = await request(app).delete(`/templates/${legs.id}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('deletes the template and its exercises, and returns 204', async () => {
+    const res = await del(legs.id);
+
+    expect(res.status).toBe(204);
+    expect(await templateCount()).toBe(0);
+    expect((await pool.query('SELECT 1 FROM template_exercises')).rowCount).toBe(0);
+  });
+
+  it('frees the name for a new template', async () => {
+    await del(legs.id);
+
+    const res = await post({ name: 'Leg day', exercises: [{ exercise_id: squat, set_count: 3 }] });
+
+    expect(res.status).toBe(201);
+  });
+
+  it("returns 404 for another user's template or a missing one, and deletes nothing", async () => {
+    const theirs = await del(legs.id, other.id);
+    const missing = await del(99999);
+
+    expect(theirs.status).toBe(404);
+    expect(theirs.body).toEqual({ error: 'Template not found' });
+    expect(missing.status).toBe(404);
+    expect(await templateCount()).toBe(1);
+  });
+
+  it('returns 400 for a malformed id', async () => {
+    const res = await del('0');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid template id' });
+  });
+});

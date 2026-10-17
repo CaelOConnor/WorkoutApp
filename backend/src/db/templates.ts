@@ -52,6 +52,20 @@ export async function listTemplateDetails(userId: number): Promise<TemplateDetai
   return attachExercises(result.rows);
 }
 
+// Locks one of the user's templates until the transaction ends, and says whether it was found
+// (false for a missing one or another user's, which callers turn into a 404). Same idea as
+// lockWorkout: an edit replaces all of a template's exercise rows (DELETE, then INSERT), and two
+// edits at once would collide. Under READ COMMITTED, the second edit's DELETE waits on the first's
+// locked rows but doesn't see the rows the first then inserts, so its INSERT hits the primary key.
+// Locking the template row first makes the second edit wait before it reads anything.
+export async function lockTemplate(client: PoolClient, templateId: number, userId: number): Promise<boolean> {
+  const result = await client.query('SELECT 1 FROM templates WHERE id = $1 AND user_id = $2 FOR UPDATE', [
+    templateId,
+    userId,
+  ]);
+  return result.rowCount === 1;
+}
+
 // Writes a template's exercises at positions 1..n, in the order given. Call inside a transaction.
 // unnest() turns the two arrays into rows, pairing elements by index (exercise_ids[i] with
 // set_counts[i]), and WITH ORDINALITY adds each row's index, counting from 1, which is the position.
