@@ -4,12 +4,13 @@ import { isUniqueViolation } from '../db/errors';
 import {
   findVisibleExercise,
   latestUnit,
+  loadLastSets,
   listLoggedExercises,
   loadProgressPoints,
 } from '../db/progress';
 import { getAuthUser, requireAuth } from '../middleware/auth';
-import { isProgressQuery, parseCreateExerciseBody, parseId } from '../validation';
-import type { ErrorResponse, Exercise, ExerciseProgress, LoggedExercise } from '../types/models';
+import { isProgressQuery, parseCreateExerciseBody, parseId, parseLastSetsQuery } from '../validation';
+import type { ErrorResponse, Exercise, ExerciseLastSets, ExerciseProgress, LoggedExercise } from '../types/models';
 import type { NoParams } from './types';
 
 // Mounted at /exercises in app.ts, so '/' here is GET /exercises.
@@ -86,6 +87,20 @@ exercisesRouter.get(
   '/logged',
   async (req: Request<NoParams>, res: Response<LoggedExercise[]>) => {
     res.json(await listLoggedExercises(getAuthUser(req).id));
+  }
+);
+
+// The sets to prefill new sets with: "last time" for each exercise id (see ExerciseLastSets).
+// req.query is widened to unknown and narrowed, as in /:id/progress below.
+exercisesRouter.get(
+  '/last-sets',
+  async (req: Request<NoParams>, res: Response<ExerciseLastSets[] | ErrorResponse>) => {
+    const query: unknown = req.query;
+    const ids = parseLastSetsQuery(query);
+    if (ids === null) {
+      return res.status(400).json({ error: 'Invalid last-sets query' });
+    }
+    return res.json(await loadLastSets(ids, getAuthUser(req).id));
   }
 );
 

@@ -191,6 +191,34 @@ export function isProgressQuery(value: unknown): value is ProgressQuery {
   );
 }
 
+// A template's exercises fit easily; the cap keeps the URL and the query's array small.
+const MAX_LAST_SETS_IDS = 100;
+
+// unknown -> exercise ids, for req.query on GET /exercises/last-sets, or null if invalid.
+// `ids` is one comma-separated string ('3,1,2'); a repeated key (?ids=1&ids=2) arrives as an array
+// and is rejected. Every item must be an id parseId accepts, so '', '1,,2', '1,' and ' 2' fail.
+// A repeated id is kept once, at its first place; order is otherwise kept, since the response
+// follows it.
+export function parseLastSetsQuery(value: unknown): number[] | null {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['ids']) || typeof value.ids !== 'string') {
+    return null;
+  }
+  const items = value.ids.split(',');
+  if (items.length > MAX_LAST_SETS_IDS) {
+    return null;
+  }
+  const ids: number[] = [];
+  for (const item of items) {
+    const id = parseId(item);
+    if (id === null) {
+      return null;
+    }
+    ids.push(id);
+  }
+  // A Set keeps the first of each value, in insertion order; spreading it makes an array again.
+  return [...new Set(ids)];
+}
+
 // Column limits from the baseline migration: exercises.name VARCHAR(100), muscle_group VARCHAR(50).
 const MAX_EXERCISE_NAME_LENGTH = 100;
 const MAX_MUSCLE_GROUP_LENGTH = 50;

@@ -200,6 +200,16 @@ export type LoggedExercise = Pick<Exercise, 'id' | 'name'> & {
   unit: WeightUnit;
 };
 
+// One item of GET /exercises/last-sets?ids=: the caller's sets of one exercise from the most recent
+// workout (by date, then the workout logged last) that has a set of it with 1+ reps. Only its 1+
+// rep sets, by set_number. The app prefills new sets from these. Exercises never logged by the
+// caller are left out; the rest come in the order their ids were sent.
+export interface ExerciseLastSets {
+  exercise_id: number;
+  date: string; // 'YYYY-MM-DD', that workout's date
+  sets: Pick<WorkoutSet, 'reps' | 'weight' | 'unit'>[];
+}
+
 export interface LoginResponse {
   token: string;
   email: string;

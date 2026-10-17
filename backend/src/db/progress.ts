@@ -1,6 +1,7 @@
 import pool from './pool';
 import type {
   Exercise,
+  ExerciseLastSets,
   LoggedExercise,
   ProgressPoint,
   ProgressQuery,
@@ -98,4 +99,43 @@ export async function listLoggedExercises(userId: number): Promise<LoggedExercis
     [userId]
   );
   return result.rows;
+}
+
+// For each exercise id the user has logged, the 1+ rep sets from their most recent workout with
+// one, in the order the ids are given (see ExerciseLastSets). Two steps in one query:
+// - latest: DISTINCT ON picks one workout per exercise, the first in ORDER BY order, i.e. the
+//   latest date, then the workout logged last. Only 1+ rep sets are looked at, so a workout with
+//   just the 0 x 0 placeholder of that exercise doesn't count as "last time".
+// - then that workout's 1+ rep sets of the exercise, by set_number.
+// Filtering on w.user_id means only the caller's own sets count, so another user's custom
+// exercise id finds nothing, the same as one never logged.
+export async function loadLastSets(exerciseIds: number[], userId: number): Promise<ExerciseLastSets[]> {
+  const result = await pool.query<{ exercise_id: number; date: string } & ExerciseLastSets['sets'][number]>(
+    `WITH latest AS (
+       SELECT DISTINCT ON (s.exercise_id) s.exercise_id, w.id AS workout_id, w.date
+       FROM sets s
+       JOIN workouts w ON w.id = s.workout_id
+       WHERE w.user_id = $1 AND s.exercise_id = ANY($2::int[]) AND s.reps > 0
+       ORDER BY s.exercise_id, w.date DESC, w.id DESC
+     )
+     SELECT l.exercise_id, l.date, s.reps, s.weight, s.unit
+     FROM latest l
+     JOIN sets s ON s.workout_id = l.workout_id AND s.exercise_id = l.exercise_id
+     WHERE s.reps > 0
+     ORDER BY l.exercise_id, s.set_number`,
+    [userId, exerciseIds]
+  );
+
+  const byExercise = new Map<number, ExerciseLastSets>();
+  for (const { exercise_id, date, ...set } of result.rows) {
+    const entry = byExercise.get(exercise_id) ?? { exercise_id, date, sets: [] };
+    entry.sets.push(set);
+    byExercise.set(exercise_id, entry);
+  }
+  // Back in the caller's order. flatMap with [] for a missing entry drops it, which also narrows
+  // `ExerciseLastSets | undefined` to ExerciseLastSets without a cast.
+  return exerciseIds.flatMap((id) => {
+    const entry = byExercise.get(id);
+    return entry ? [entry] : [];
+  });
 }
