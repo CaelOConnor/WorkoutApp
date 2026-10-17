@@ -53,5 +53,33 @@ services:
       timeout: 3s
       retries: 15
 
+  # Runs the backend tests on Linux: `npm test` in backend/ (docker compose run --rm --build
+  # backend-test). On Windows, Vitest workers crash intermittently (0xC0000409, see the roadmap's
+  # Known issues); Linux doesn't have that crash. Extra arguments go to Vitest
+  # (`npm test -- test/templates.test.ts`), because they replace the empty command after the
+  # entrypoint.
+  backend-test:
+    build:
+      context: ./backend
+      target: test
+    profiles: ["test"]
+    entrypoint: ["npx", "vitest", "run"]
+    environment:
+      # Read by test/test-env.ts. Inside the Compose network the test DB is postgres-test:5432
+      # (5433 is only its port on the host).
+      TEST_DATABASE_URL: postgres://workoutapp:devpassword@postgres-test:5432/workoutapp_test
+    # The source, read-only, one folder or file at a time. Mounting all of backend/ would cover
+    # the image's Linux node_modules with Windows' (bcrypt's native module wouldn't load).
+    volumes:
+      - ./backend/src:/app/src:ro
+      - ./backend/test:/app/test:ro
+      - ./backend/migrations:/app/migrations:ro
+      - ./backend/package.json:/app/package.json:ro
+      - ./backend/tsconfig.json:/app/tsconfig.json:ro
+      - ./backend/vitest.config.mts:/app/vitest.config.mts:ro
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+
 volumes:
   pgdata:

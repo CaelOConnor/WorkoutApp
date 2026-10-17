@@ -13,7 +13,8 @@
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down",
     "migrate:create": "node-pg-migrate create --migration-file-language sql",
-    "test": "vitest run",
+    "test": "docker compose -f ../docker-compose.yml --profile test run --rm --build backend-test",
+    "test:local": "vitest run",
     "test:watch": "vitest"
   },
   "keywords": [],

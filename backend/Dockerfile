@@ -1,16 +1,26 @@
-# Stage 1: install all deps (including TypeScript) and compile src/ -> dist/
-FROM node:24-alpine AS build
+# Stage 1: install all deps (including TypeScript, Vitest and other dev tools). Shared by the
+# build and test stages, so a lockfile change reinstalls once for both.
+FROM node:24-alpine AS deps
 
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
 
+# Stage 2: compile src/ -> dist/
+FROM deps AS build
+
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Stage 2: runtime image with only production deps and the compiled JS
+# Test stage: only Linux node_modules. The backend-test service in docker-compose.yml mounts the
+# source read-only at run time, so edits don't need a rebuild, and runs Vitest here (on Linux,
+# where Windows' intermittent worker crash doesn't apply). Only built when asked for by name
+# (target: test); a plain build skips it, since the final stage below doesn't depend on it.
+FROM deps AS test
+
+# Final stage (the default target): runtime image with only production deps and the compiled JS
 FROM node:24-alpine
 
 WORKDIR /app
