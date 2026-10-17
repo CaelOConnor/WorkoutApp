@@ -34,7 +34,8 @@ export class InvalidResponseError extends Error {
   }
 }
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+// PUT replaces a whole resource (PUT /templates/:id); PATCH changes only the fields sent.
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 // A function type for any type guard: given unknown, it says whether the value is a T.
 export type Guard<T> = (value: unknown) => value is T;

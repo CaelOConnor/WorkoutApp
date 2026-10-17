@@ -1,9 +1,11 @@
 import type {
   Exercise,
+  ExerciseLastSets,
   ExerciseProgress,
   LoggedExercise,
   LoginResponse,
   PublicUser,
+  TemplateDetail,
   WorkoutDetail,
   WorkoutDetailSet,
 } from '@shared/models';
@@ -11,12 +13,15 @@ import type {
 import {
   isCreateWorkoutResponse,
   isErrorResponse,
+  isExerciseLastSetsList,
   isExerciseList,
   isExerciseProgress,
   isLoggedExerciseList,
   isLoginResponse,
   isNoContent,
   isPublicUser,
+  isTemplateDetail,
+  isTemplateDetailList,
   isWorkoutDetail,
   isWorkoutDetailList,
 } from './types';
@@ -229,5 +234,74 @@ describe('isLoggedExerciseList', () => {
     ['a zero id', [{ ...validLogged, id: 0 }]],
   ])('rejects %s', (_label, value) => {
     expect(isLoggedExerciseList(value)).toBe(false);
+  });
+});
+
+describe('isTemplateDetail and isTemplateDetailList', () => {
+  const validTemplate = {
+    id: 4,
+    name: 'Leg day',
+    exercises: [
+      { exercise_id: 1, exercise_name: 'Squat', set_count: 3 },
+      { exercise_id: 2, exercise_name: 'Leg Press', set_count: 20 },
+    ],
+  } satisfies TemplateDetail;
+
+  it('accepts a template, and a list of them (including an empty one)', () => {
+    expect(isTemplateDetail(validTemplate)).toBe(true);
+    expect(isTemplateDetailList([validTemplate, { ...validTemplate, id: 5 }])).toBe(true);
+    expect(isTemplateDetailList([])).toBe(true);
+  });
+
+  it('allows extra keys, so a newer server can add fields', () => {
+    expect(isTemplateDetail({ ...validTemplate, created_at: '2026-10-17' })).toBe(true);
+  });
+
+  const exercise = validTemplate.exercises[0];
+  it.each([
+    ['a missing name', { ...validTemplate, name: undefined }],
+    ['an empty name', { ...validTemplate, name: '' }],
+    ['a zero id', { ...validTemplate, id: 0 }],
+    ['missing exercises', { ...validTemplate, exercises: undefined }],
+    // The server requires at least one exercise, so an empty list means something is wrong.
+    ['no exercises', { ...validTemplate, exercises: [] }],
+    ['a set_count of 0', { ...validTemplate, exercises: [{ ...exercise, set_count: 0 }] }],
+    ['a fractional set_count', { ...validTemplate, exercises: [{ ...exercise, set_count: 2.5 }] }],
+    ['a missing exercise_name', { ...validTemplate, exercises: [{ ...exercise, exercise_name: undefined }] }],
+  ])('rejects %s', (_label, value) => {
+    expect(isTemplateDetail(value)).toBe(false);
+  });
+
+  it('rejects a single template where a list is expected', () => {
+    expect(isTemplateDetailList(validTemplate)).toBe(false);
+  });
+});
+
+describe('isExerciseLastSetsList', () => {
+  const validLastSets = {
+    exercise_id: 1,
+    date: '2026-10-08',
+    sets: [
+      { reps: 5, weight: 225, unit: 'lb' },
+      { reps: 3, weight: 102.5, unit: 'kg' },
+    ],
+  } satisfies ExerciseLastSets;
+
+  it('accepts a list, including an empty one', () => {
+    expect(isExerciseLastSetsList([validLastSets])).toBe(true);
+    expect(isExerciseLastSetsList([])).toBe(true);
+  });
+
+  const set = validLastSets.sets[0];
+  it.each([
+    ['a single item (not a list)', validLastSets],
+    ['a timestamp date', [{ ...validLastSets, date: '2026-10-08T00:00:00Z' }]],
+    // Only sets with 1+ reps are sent, and an exercise without any is left out.
+    ['no sets', [{ ...validLastSets, sets: [] }]],
+    ['a set with 0 reps', [{ ...validLastSets, sets: [{ ...set, reps: 0 }] }]],
+    ['a set with a string weight', [{ ...validLastSets, sets: [{ ...set, weight: '225' }] }]],
+    ['a set with an unknown unit', [{ ...validLastSets, sets: [{ ...set, unit: 'st' }] }]],
+  ])('rejects %s', (_label, value) => {
+    expect(isExerciseLastSetsList(value)).toBe(false);
   });
 });

@@ -12,11 +12,14 @@ import type {
   CreateWorkoutResponse,
   ErrorResponse,
   Exercise,
+  ExerciseLastSets,
   ExerciseProgress,
   LoggedExercise,
   LoginResponse,
   ProgressPoint,
   PublicUser,
+  TemplateDetail,
+  TemplateDetailExercise,
   WeightUnit,
   WorkoutDetail,
   WorkoutDetailSet,
@@ -167,6 +170,57 @@ function isLoggedExercise(value: unknown): value is LoggedExercise {
 
 // GET /exercises/logged
 export const isLoggedExerciseList = isListOf(isLoggedExercise);
+
+function isTemplateDetailExercise(value: unknown): value is TemplateDetailExercise {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.exercise_id) &&
+    typeof value.exercise_name === 'string' &&
+    // 1 to 20 on the server; only the lower bound matters here (0 sets would show nothing).
+    isPositiveInteger(value.set_count)
+  );
+}
+
+// POST /templates (201), GET and PUT /templates/:id
+export function isTemplateDetail(value: unknown): value is TemplateDetail {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.id) &&
+    isNonEmptyString(value.name) &&
+    // The server requires at least one exercise.
+    Array.isArray(value.exercises) &&
+    value.exercises.length > 0 &&
+    value.exercises.every(isTemplateDetailExercise)
+  );
+}
+
+// GET /templates
+export const isTemplateDetailList = isListOf(isTemplateDetail);
+
+// One of last time's sets: only sets with 1+ reps are sent.
+function isLastSet(value: unknown): value is ExerciseLastSets['sets'][number] {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.reps) &&
+    isWeight(value.weight) &&
+    isWeightUnit(value.unit)
+  );
+}
+
+function isExerciseLastSets(value: unknown): value is ExerciseLastSets {
+  return (
+    isRecord(value) &&
+    isPositiveInteger(value.exercise_id) &&
+    isDateString(value.date) &&
+    // An exercise with no counted sets is left out of the response, so each has at least one.
+    Array.isArray(value.sets) &&
+    value.sets.length > 0 &&
+    value.sets.every(isLastSet)
+  );
+}
+
+// GET /exercises/last-sets?ids=
+export const isExerciseLastSetsList = isListOf(isExerciseLastSets);
 
 // POST /workouts (201): just the new workout's id.
 export function isCreateWorkoutResponse(value: unknown): value is CreateWorkoutResponse {
