@@ -69,6 +69,11 @@ A mobile workout tracker (eventually on the App Store and Google Play). A user l
   - Root layout is wrapped in `GestureHandlerRootView` (needed for the chart's press gesture).
 
 ## Phase 5: Templates
+- [x] Migration `templates`: `templates (id, user_id, name)` with a unique index on `(user_id, lower(name))`, and `template_exercises (template_id, exercise_id, position, set_count)`, shaped like `workout_exercises` (primary key on the pair, unique `(template_id, position)`, `ON DELETE CASCADE` from the template). `set_count` is 1 to 20. No target reps or weight: starting a workout prefills them from the last time each exercise was logged. Workouts aren't linked to templates (no `workouts.template_id`), so editing or deleting a template never changes a past workout.
+  - Trigger `template_exercises_exercise_visible`: the sets visibility rule for templates (built-in or the template owner's own exercise), raising 23503 so routes can return the usual 400. Without it, reading a template back would show another user's custom exercise name.
+  - Positions aren't `DEFERRABLE`: editing a template will replace all its rows in one locked transaction rather than swap positions.
+  - The exercise FK has no cascade, so deleting a custom exercise used by a template is a 23503: one more case for the "edit and delete custom exercises" decision above.
+  - Tests in `test/migrations/templates.test.ts`.
 - [ ] Save a reusable workout (e.g. "leg day") as a list of exercises.
 - [ ] Start a new workout from a template so only the numbers need filling in.
 
