@@ -36,9 +36,11 @@ export default function LogWorkoutScreen() {
   const navigation = useNavigation();
   // "Today" on the phone's calendar, fixed when the screen opens. useState's initializer runs once.
   const [today] = useState(() => localDateString());
-  // useReducer(reducer, initialArg, init): init(initialArg) builds the first state, once.
-  // dispatch(action) then runs the reducer (src/workouts/log-form.ts) and re-renders.
-  const [form, dispatch] = useReducer(logFormReducer, today, createLogForm);
+  // The starting form, kept so hasChanges can compare against it. useReducer only reads its
+  // second argument on the first render; dispatch(action) then runs the reducer
+  // (src/workouts/log-form.ts) and re-renders.
+  const [initial] = useState(() => createLogForm(today));
+  const [form, dispatch] = useReducer(logFormReducer, initial);
   // True after the first press of Save: from then on, empty fields show their errors too.
   const [submitted, setSubmitted] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function LogWorkoutScreen() {
   // Runs whenever this screen is about to be removed while `preventRemove` is true: the back
   // button, the iOS swipe, Android's back key, or router.replace after saving. The removal is
   // put on hold; navigation.dispatch(data.action) lets it continue.
-  usePreventRemove(hasChanges(form, today), ({ data }) => {
+  usePreventRemove(hasChanges(form, initial), ({ data }) => {
     if (saved.current) {
       navigation.dispatch(data.action);
       return;

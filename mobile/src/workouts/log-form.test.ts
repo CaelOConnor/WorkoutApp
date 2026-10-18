@@ -1,10 +1,15 @@
+import type { ExerciseLastSets, TemplateDetail } from '@shared/models';
+
 import {
   createLogForm,
+  createLogFormFromTemplate,
   hasChanges,
   logFormReducer,
+  NO_SETS_ERROR,
   validateLogForm,
   type LogAction,
   type LogForm,
+  type LogSet,
 } from './log-form';
 
 const TODAY = '2026-10-13';
@@ -35,6 +40,73 @@ function withSquat(reps = '5', weight = '225'): LogForm {
   return apply(form, { type: 'updateSet', exerciseKey: key, setKey, change: { reps, weight } });
 }
 
+// The set at [exercise, set] of a form.
+function setAt(form: LogForm, exercise: number, set: number): LogSet {
+  const found = form.exercises[exercise]?.sets[set];
+  if (!found) throw new Error(`No set ${exercise}/${set}`);
+  return found;
+}
+
+// Taps the ✓ of the set at [exercise, set].
+function tick(form: LogForm, exercise: number, set: number): LogForm {
+  return apply(form, {
+    type: 'toggleSet',
+    exerciseKey: exerciseKey(form, exercise),
+    setKey: setAt(form, exercise, set).key,
+  });
+}
+
+// Types into the set at [exercise, set].
+function typeInto(
+  form: LogForm,
+  exercise: number,
+  set: number,
+  change: { reps?: string; weight?: string }
+): LogForm {
+  return apply(form, {
+    type: 'updateSet',
+    exerciseKey: exerciseKey(form, exercise),
+    setKey: setAt(form, exercise, set).key,
+    change,
+  });
+}
+
+// What each row of an exercise holds: [typed reps, typed weight, unit, hint, ticked].
+function rowsOf(form: LogForm, exercise: number) {
+  return form.exercises[exercise]?.sets.map((s) => [s.reps, s.weight, s.unit, s.hint, s.ticked]);
+}
+
+const LEG_DAY: TemplateDetail = {
+  id: 4,
+  name: 'Leg day',
+  exercises: [
+    { exercise_id: 2, exercise_name: 'Squat', set_count: 3 },
+    { exercise_id: 9, exercise_name: 'Leg Press', set_count: 2 },
+    { exercise_id: 5, exercise_name: 'Calf Raise', set_count: 2 },
+  ],
+};
+
+// Last time: Squat had two sets, Leg Press three (in kg); Calf Raise was never logged.
+const LAST_SETS: ExerciseLastSets[] = [
+  {
+    exercise_id: 2,
+    date: '2026-10-09',
+    sets: [
+      { reps: 5, weight: 225, unit: 'lb' },
+      { reps: 3, weight: 245, unit: 'lb' },
+    ],
+  },
+  {
+    exercise_id: 9,
+    date: '2026-10-06',
+    sets: [
+      { reps: 10, weight: 120, unit: 'kg' },
+      { reps: 8, weight: 130.5, unit: 'kg' },
+      { reps: 6, weight: 140, unit: 'kg' },
+    ],
+  },
+];
+
 describe('createLogForm', () => {
   it('starts on the given day with no notes and no exercises', () => {
     expect(createLogForm(TODAY)).toMatchObject({ date: TODAY, notes: '', exercises: [] });
@@ -50,7 +122,8 @@ describe('logFormReducer', () => {
         key: expect.any(Number),
         exerciseId: 2,
         name: 'Squat',
-        sets: [{ key: expect.any(Number), reps: '', weight: '', unit: 'lb' }],
+        // No hint (nothing to suggest) and not ticked: left untouched, it isn't saved.
+        sets: [{ key: expect.any(Number), reps: '', weight: '', unit: 'lb', hint: null, ticked: false }],
       },
     ]);
   });
@@ -98,7 +171,9 @@ describe('logFormReducer', () => {
     const [only = -1] = setKeys(form, 0);
     form = apply(form, { type: 'removeSet', exerciseKey: key, setKey: only }, { type: 'addSet', exerciseKey: key });
 
-    expect(form.exercises[0]?.sets).toEqual([{ key: expect.any(Number), reps: '', weight: '', unit: 'lb' }]);
+    expect(form.exercises[0]?.sets).toEqual([
+      { key: expect.any(Number), reps: '', weight: '', unit: 'lb', hint: null, ticked: false },
+    ]);
   });
 
   it("starts a new exercise's set in the unit used last", () => {
@@ -158,19 +233,174 @@ describe('logFormReducer', () => {
   });
 });
 
+describe('ticking sets', () => {
+  it('ticks and unticks a set with ✓', () => {
+    const form = apply(createLogForm(TODAY), { type: 'addExercise', exercise: SQUAT });
+
+    expect(setAt(tick(form, 0, 0), 0, 0).ticked).toBe(true);
+    expect(setAt(tick(tick(form, 0, 0), 0, 0), 0, 0).ticked).toBe(false);
+  });
+
+  it('ticks a set when reps or weight are typed into it, but not for a unit change', () => {
+    const form = apply(createLogForm(TODAY), { type: 'addExercise', exercise: SQUAT });
+    const unitOnly = apply(form, {
+      type: 'updateSet',
+      exerciseKey: exerciseKey(form, 0),
+      setKey: setAt(form, 0, 0).key,
+      change: { unit: 'kg' },
+    });
+
+    expect(setAt(typeInto(form, 0, 0, { reps: '5' }), 0, 0).ticked).toBe(true);
+    expect(setAt(typeInto(form, 0, 0, { weight: '100' }), 0, 0).ticked).toBe(true);
+    expect(setAt(unitOnly, 0, 0).ticked).toBe(false);
+  });
+
+  it('copies the previous set, hint and tick included, for + Add set', () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+    const added = apply(form, { type: 'addSet', exerciseKey: exerciseKey(form, 0) });
+
+    // Squat's third row has last time's last set as its hint, unticked; the copy is the same.
+    expect(rowsOf(added, 0)?.at(-1)).toEqual(['', '', 'lb', { reps: '3', weight: '245' }, false]);
+  });
+});
+
+describe('createLogFormFromTemplate', () => {
+  it("lists the template's exercises in order, on the given day, with no notes", () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+    expect(form).toMatchObject({ date: TODAY, notes: '' });
+    expect(form.exercises.map((e) => [e.exerciseId, e.name, e.sets.length])).toEqual([
+      [2, 'Squat', 3],
+      [9, 'Leg Press', 2],
+      [5, 'Calf Raise', 2],
+    ]);
+  });
+
+  it("hints row i with last time's set i, and extra rows with last time's last set", () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+    // Nothing typed or ticked: the numbers are only hints (shown as placeholders).
+    expect(rowsOf(form, 0)).toEqual([
+      ['', '', 'lb', { reps: '5', weight: '225' }, false],
+      ['', '', 'lb', { reps: '3', weight: '245' }, false],
+      ['', '', 'lb', { reps: '3', weight: '245' }, false],
+    ]);
+  });
+
+  it("uses last time's first sets when the template has fewer, in their unit", () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+    expect(rowsOf(form, 1)).toEqual([
+      ['', '', 'kg', { reps: '10', weight: '120' }, false],
+      ['', '', 'kg', { reps: '8', weight: '130.5' }, false],
+    ]);
+  });
+
+  it('gives a never-logged exercise empty rows in the unit used last, as adding one does', () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+    // The row before Calf Raise's is Leg Press's, in kg.
+    expect(rowsOf(form, 2)).toEqual([
+      ['', '', 'kg', null, false],
+      ['', '', 'kg', null, false],
+    ]);
+  });
+
+  it('starts a never-logged first exercise in lb, as an empty workout does', () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, []);
+
+    expect(rowsOf(form, 0)?.map((row) => row[2])).toEqual(['lb', 'lb', 'lb']);
+  });
+
+  it('gives every exercise and set its own key, and keeps nextKey above them', () => {
+    const form = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+    const keys = [
+      ...form.exercises.map((e) => e.key),
+      ...form.exercises.flatMap((e) => e.sets.map((s) => s.key)),
+    ];
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(Math.max(...keys)).toBeLessThan(form.nextKey);
+  });
+});
+
+describe('validating a form started from a template', () => {
+  const start = () => createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+  it('saves nothing until a set is ticked, and says so', () => {
+    const result = validateLogForm(start());
+
+    expect(result.body).toBeNull();
+    expect(result.setsError).toBe(NO_SETS_ERROR);
+    expect(result.setErrors.size).toBe(0);
+  });
+
+  it('saves a ticked set with its hint values', () => {
+    const form = tick(tick(start(), 0, 0), 1, 1);
+
+    expect(validateLogForm(form).body).toEqual({
+      date: TODAY,
+      sets: [
+        { exercise_id: 2, reps: 5, weight: 225, unit: 'lb' },
+        { exercise_id: 9, reps: 8, weight: 130.5, unit: 'kg' },
+      ],
+    });
+  });
+
+  it('uses what was typed over the hint, field by field', () => {
+    // Only reps typed (which ticked the row): the weight still comes from the hint.
+    const form = typeInto(start(), 0, 1, { reps: '4' });
+
+    expect(validateLogForm(form).body?.sets).toEqual([
+      { exercise_id: 2, reps: 4, weight: 245, unit: 'lb' },
+    ]);
+  });
+
+  it('drops a set that was unticked, even after typing into it', () => {
+    const form = tick(typeInto(start(), 0, 0, { reps: '6', weight: '230' }), 0, 0);
+
+    expect(validateLogForm(form)).toMatchObject({ body: null, setsError: NO_SETS_ERROR });
+  });
+
+  it('reports errors only for ticked sets, e.g. a never-logged one left blank', () => {
+    const form = tick(start(), 2, 0); // Calf Raise: no hint, nothing typed
+    const key = setAt(form, 2, 0).key;
+    const result = validateLogForm(form);
+
+    expect(result.body).toBeNull();
+    expect(result.setsError).toBeNull();
+    expect([...result.setErrors.keys()]).toEqual([key]);
+    expect(result.setErrors.get(key)).toEqual({
+      reps: 'Reps must be a whole number.',
+      weight: 'Weight must be a number up to 9999.99, with at most 2 decimals.',
+    });
+  });
+});
+
 describe('hasChanges', () => {
+  const empty = createLogForm(TODAY);
+
   it('is false for a new form', () => {
-    expect(hasChanges(createLogForm(TODAY), TODAY)).toBe(false);
+    expect(hasChanges(createLogForm(TODAY), empty)).toBe(false);
   });
 
   it('is true after adding an exercise, writing notes, or changing the date', () => {
-    expect(hasChanges(withSquat(), TODAY)).toBe(true);
-    expect(hasChanges(apply(createLogForm(TODAY), { type: 'setNotes', notes: 'x' }), TODAY)).toBe(true);
-    expect(hasChanges(apply(createLogForm(TODAY), { type: 'setDate', date: '2026-10-12' }), TODAY)).toBe(true);
+    expect(hasChanges(withSquat(), empty)).toBe(true);
+    expect(hasChanges(apply(empty, { type: 'setNotes', notes: 'x' }), empty)).toBe(true);
+    expect(hasChanges(apply(empty, { type: 'setDate', date: '2026-10-12' }), empty)).toBe(true);
   });
 
   it('ignores notes that are only spaces', () => {
-    expect(hasChanges(apply(createLogForm(TODAY), { type: 'setNotes', notes: '  ' }), TODAY)).toBe(false);
+    expect(hasChanges(apply(empty, { type: 'setNotes', notes: '  ' }), empty)).toBe(false);
+  });
+
+  it('compares against the starting form, so a prefilled form left untouched has no changes', () => {
+    const initial = createLogFormFromTemplate(TODAY, LEG_DAY, LAST_SETS);
+
+    expect(hasChanges(initial, initial)).toBe(false);
+    expect(hasChanges(tick(initial, 0, 0), initial)).toBe(true);
+    // Ticked, then unticked: back where it started.
+    expect(hasChanges(tick(tick(initial, 0, 0), 0, 0), initial)).toBe(false);
   });
 });
 
@@ -247,7 +477,8 @@ describe('validateLogForm', () => {
 
   it('counts valid sets even when another set is invalid', () => {
     let form = withSquat('5', '225');
-    form = apply(form, { type: 'addExercise', exercise: BENCH }); // Bench's set is still empty
+    form = apply(form, { type: 'addExercise', exercise: BENCH });
+    form = typeInto(form, 1, 0, { reps: 'x' });
 
     const result = validateLogForm(form);
 
@@ -255,8 +486,23 @@ describe('validateLogForm', () => {
     expect(result.body).toBeNull();
   });
 
-  it('builds no body when there are no sets', () => {
-    expect(validateLogForm(createLogForm(TODAY))).toMatchObject({ validSetCount: 0, body: null });
+  it('skips a set that was never ticked or typed into, without an error', () => {
+    let form = withSquat('5', '225');
+    form = apply(form, { type: 'addExercise', exercise: BENCH }); // Bench's set is untouched
+
+    const result = validateLogForm(form);
+
+    expect(result.setErrors.has(setAt(form, 1, 0).key)).toBe(false);
+    expect(result.body?.sets).toEqual([{ exercise_id: 2, reps: 5, weight: 225, unit: 'lb' }]);
+  });
+
+  it('builds no body when there are no sets, and says to tick one', () => {
+    expect(validateLogForm(createLogForm(TODAY))).toMatchObject({
+      validSetCount: 0,
+      body: null,
+      setsError: NO_SETS_ERROR,
+    });
+    expect(validateLogForm(withSquat()).setsError).toBeNull();
   });
 
   it('reports an invalid date', () => {
