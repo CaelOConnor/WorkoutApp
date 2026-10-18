@@ -1,7 +1,14 @@
 // Integration tests for the template screens: the Templates tab, a template's detail, and the
 // shared form behind "+ New template" and Edit. The real app from src/app/, signed in, with a fake
 // backend.
-import type { CreateExerciseBody, Exercise, TemplateBody, TemplateDetail } from '@shared/models';
+import type {
+  CreateExerciseBody,
+  Exercise,
+  TemplateBody,
+  TemplateDetail,
+  WorkoutDetail,
+  WorkoutDetailSet,
+} from '@shared/models';
 import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as SecureStore from 'expo-secure-store';
@@ -46,11 +53,38 @@ const PUSH_DAY: TemplateDetail = {
 // The id POST /templates gives the first new template.
 const NEW_ID = 10;
 
+// `count` sets of one exercise, numbered 1..count like the server's.
+function setsOf(exercise: Exercise, count: number, firstId: number): WorkoutDetailSet[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: firstId + i,
+    exercise_id: exercise.id,
+    exercise_name: exercise.name,
+    set_number: i + 1,
+    reps: 5,
+    weight: 100,
+    unit: 'lb' as const,
+  }));
+}
+
+// A workout (id 3, Wednesday 14 October) with more Squat sets than a template can hold.
+// EXERCISES[n]! : the array is a constant, so the `!` (non-null assertion) is safe here.
+const WORKOUT: WorkoutDetail = {
+  id: 3,
+  date: '2026-10-14',
+  notes: null,
+  sets: [
+    ...setsOf(EXERCISES[0]!, 22, 300), // Squat
+    ...setsOf(EXERCISES[3]!, 3, 400), // Bench Press
+    ...setsOf(EXERCISES[1]!, 1, 500), // RDL
+  ],
+};
+
 // A backend with the templates routes, behaving like the real ones: the list sorted by name
 // ignoring case, 409 for a name already used (ignoring case, except the template's own), 404 for
 // a template that isn't there. `holdWrites()` keeps POST and PUT unanswered until the function
 // it returns is called.
-function fakeServer(initial: TemplateDetail[] = [LEG_DAY, PUSH_DAY]) {
+// `workouts`: the history, each also served as GET /workouts/:id.
+function fakeServer(initial: TemplateDetail[] = [LEG_DAY, PUSH_DAY], workouts: WorkoutDetail[] = []) {
   const templates = [...initial];
   const exercises = [...EXERCISES];
   // Every POST and PUT body, in order.
@@ -82,7 +116,7 @@ function fakeServer(initial: TemplateDetail[] = [LEG_DAY, PUSH_DAY]) {
 
   const routes: MockRoutes = {
     // The history, which the app opens on before the test switches tabs.
-    'GET /workouts': () => jsonResponse(200, []),
+    'GET /workouts': () => jsonResponse(200, workouts),
     'GET /templates': () =>
       jsonResponse(
         200,
@@ -113,6 +147,10 @@ function fakeServer(initial: TemplateDetail[] = [LEG_DAY, PUSH_DAY]) {
       return jsonResponse(201, template);
     },
   };
+
+  for (const workout of workouts) {
+    routes[`GET /workouts/${workout.id}`] = () => jsonResponse(200, workout);
+  }
 
   // GET, PUT and DELETE for every id a test can reach.
   for (const id of [1, 2, NEW_ID]) {
@@ -499,6 +537,74 @@ it('shows "Template not found" for a template that was deleted elsewhere', async
   expect(await screen.findByText('Template not found')).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'Back to templates' }));
   await waitFor(() => expect(app.getPathname()).toBe('/templates'));
+});
+
+describe('"Save as template" on a workout', () => {
+  // Starts on the history, like a launch, and opens the workout.
+  async function openWorkout() {
+    const rendered = renderRouter('./src/app', { initialUrl: '/' });
+    await rendered;
+    await fireEvent.press(await screen.findByRole('button', { name: /^Wed, Oct 14/ }));
+    await waitFor(() => expect(rendered.getPathname()).toBe('/workouts/3'));
+    return { getPathname: () => rendered.getPathname() };
+  }
+
+  it('prefills the form from the workout, creates the template and opens it', async () => {
+    const { bodies } = fakeServer([LEG_DAY], [WORKOUT]);
+    const app = await openWorkout();
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Save as template' }));
+
+    await waitFor(() => expect(app.getPathname()).toBe('/templates/new'));
+    // The workout's exercises in order, with as many sets as were done (Squat capped), no name.
+    expect(await screen.findByLabelText('Template name')).toHaveDisplayValue('');
+    expect(formOrder()).toEqual(['Squat', 'Bench Press', 'RDL']);
+    expect(within(screen.getByTestId('Squat card')).getByText('20 sets')).toBeOnTheScreen();
+    expect(within(screen.getByTestId('Bench Press card')).getByText('3 sets')).toBeOnTheScreen();
+    expect(within(screen.getByTestId('RDL card')).getByText('1 set')).toBeOnTheScreen();
+    expect(screen.getByText(/Squat had more than 20 sets/)).toBeOnTheScreen();
+
+    await fireEvent.changeText(screen.getByLabelText('Template name'), 'Wednesday');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save template' }));
+
+    // Like any new template: its detail replaces the form.
+    await waitFor(() => expect(app.getPathname()).toBe(`/templates/${NEW_ID}`));
+    expect(bodies).toEqual([
+      {
+        name: 'Wednesday',
+        exercises: [
+          { exercise_id: 1, set_count: 20 },
+          { exercise_id: 4, set_count: 3 },
+          { exercise_id: 2, set_count: 1 },
+        ],
+      },
+    ]);
+    expect(await detailLines()).toEqual(['Squat · 20 sets', 'Bench Press · 3 sets', 'RDL · 1 set']);
+
+    // Back returns to the workout the template came from.
+    await act(() => router.back());
+    expect(app.getPathname()).toBe('/workouts/3');
+  });
+
+  it('shows no note when every set count fits', async () => {
+    const small: WorkoutDetail = { ...WORKOUT, sets: setsOf(EXERCISES[0]!, 4, 300) };
+    fakeServer([], [small]);
+    const app = await openWorkout();
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Save as template' }));
+
+    await waitFor(() => expect(app.getPathname()).toBe('/templates/new'));
+    expect(within(await screen.findByTestId('Squat card')).getByText('4 sets')).toBeOnTheScreen();
+    expect(screen.queryByText(/more than 20 sets/)).not.toBeOnTheScreen();
+  });
+
+  it('is not offered for a workout with no exercises', async () => {
+    fakeServer([], [{ ...WORKOUT, sets: [] }]);
+    await openWorkout();
+
+    expect(await screen.findByText('No exercises in this workout yet.')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeOnTheScreen();
+  });
 });
 
 // Each button that navigates or sends a request, tapped twice: one screen or one request.

@@ -1,4 +1,4 @@
-import type { TemplateDetail } from '@shared/models';
+import type { TemplateDetail, WorkoutDetail, WorkoutDetailSet } from '@shared/models';
 
 import {
   createTemplateForm,
@@ -7,6 +7,7 @@ import {
   templateFormChanged,
   templateFormFrom,
   templateFormReducer,
+  templateFromWorkout,
   validateTemplateForm,
   type TemplateAction,
   type TemplateForm,
@@ -75,6 +76,82 @@ describe('templateFormFrom', () => {
 
     expect(new Set(keys).size).toBe(keys.length);
     expect(Math.max(...keys)).toBeLessThan(form.nextKey);
+  });
+});
+
+describe('templateFromWorkout', () => {
+  // `count` sets of one exercise, numbered 1..count like the server's.
+  function sets(exerciseId: number, name: string, count: number): WorkoutDetailSet[] {
+    return Array.from({ length: count }, (_, i) => ({
+      id: exerciseId * 100 + i,
+      exercise_id: exerciseId,
+      exercise_name: name,
+      set_number: i + 1,
+      reps: 5,
+      weight: 100,
+      unit: 'lb' as const,
+    }));
+  }
+
+  function workout(...groups: WorkoutDetailSet[][]): WorkoutDetail {
+    return { id: 3, date: '2026-10-14', notes: 'Heavy day', sets: groups.flat() };
+  }
+
+  it("takes the workout's exercises in order with their set counts, and leaves the name blank", () => {
+    const { form, cappedExercises } = templateFromWorkout(
+      workout(sets(2, 'Squat', 5), sets(1, 'Bench Press', 3), sets(7, 'Row', 1))
+    );
+
+    expect(form.name).toBe('');
+    expect(rows(form)).toEqual([
+      ['Squat', 5],
+      ['Bench Press', 3],
+      ['Row', 1],
+    ]);
+    expect(form.exercises.map((e) => e.exerciseId)).toEqual([2, 1, 7]);
+    expect(cappedExercises).toEqual([]);
+  });
+
+  it('caps a set count above the maximum, and names the exercises it capped', () => {
+    const { form, cappedExercises } = templateFromWorkout(
+      workout(sets(2, 'Squat', 24), sets(1, 'Bench Press', MAX_SET_COUNT), sets(7, 'Row', 21))
+    );
+
+    expect(rows(form)).toEqual([
+      ['Squat', MAX_SET_COUNT],
+      ['Bench Press', MAX_SET_COUNT],
+      ['Row', MAX_SET_COUNT],
+    ]);
+    // Exactly the maximum fits, so Bench Press isn't listed.
+    expect(cappedExercises).toEqual(['Squat', 'Row']);
+  });
+
+  it('has no exercises for a workout with no sets', () => {
+    // A workout only lists its exercises through their sets, so one without sets has none.
+    const { form } = templateFromWorkout(workout());
+
+    expect(form.exercises).toEqual([]);
+    expect(validateTemplateForm(form).exercisesError).not.toBeNull();
+  });
+
+  it('gives every row its own key, and keeps nextKey above them', () => {
+    const { form } = templateFromWorkout(workout(sets(2, 'Squat', 3), sets(1, 'Bench Press', 3)));
+    const keys = form.exercises.map((e) => e.key);
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(Math.max(...keys)).toBeLessThan(form.nextKey);
+  });
+
+  it('is ready to save once named', () => {
+    const { form } = templateFromWorkout(workout(sets(2, 'Squat', 5), sets(1, 'Bench Press', 3)));
+
+    expect(validateTemplateForm({ ...form, name: 'Push day' }).body).toEqual({
+      name: 'Push day',
+      exercises: [
+        { exercise_id: 2, set_count: 5 },
+        { exercise_id: 1, set_count: 3 },
+      ],
+    });
   });
 });
 

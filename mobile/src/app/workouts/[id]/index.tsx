@@ -270,6 +270,20 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
         }}
         onClosed={addExerciseFlow}
       />
+      {/* A button rather than a header item: the header already holds Edit (and the iOS back
+          button), and this is about the whole workout, like Delete below. Not offered for an
+          empty workout, since a template needs at least one exercise. */}
+      {groups.length > 0 ? (
+        <Button
+          label="Save as template"
+          variant="secondary"
+          onPress={() =>
+            guard.navigate(() =>
+              router.push({ pathname: '/templates/new', params: { fromWorkout: id } })
+            )
+          }
+        />
+      ) : null}
 
       <View style={styles.footer}>
         <Button

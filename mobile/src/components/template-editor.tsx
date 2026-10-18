@@ -36,12 +36,14 @@ export interface TemplateEditorProps {
   saving: boolean;
   // Where to go once saved (router.replace for a new template, router.back after an edit).
   onSaved: (template: TemplateDetail) => void;
+  // A note above the exercises, e.g. that set counts from a workout were capped.
+  notice?: string | null;
 }
 
 // The form behind both "+ New template" (templates/new) and Edit (templates/[id]/edit): a name,
 // and exercises in order, each with a set count. The state lives in a reducer
 // (workouts/template-form.ts); this component only renders it and dispatches actions.
-export function TemplateEditor({ initial, save, saving, onSaved }: TemplateEditorProps) {
+export function TemplateEditor({ initial, save, saving, onSaved, notice }: TemplateEditorProps) {
   const navigation = useNavigation();
   // useReducer's second argument is only read on the first render, so a refetch of the template
   // while the form is open doesn't overwrite what the user is typing.
@@ -120,6 +122,8 @@ export function TemplateEditor({ initial, save, saving, onSaved }: TemplateEdito
         {form.name.trim() !== '' && validation.nameError ? (
           <FieldError message={validation.nameError} />
         ) : null}
+
+        {notice ? <ThemedText type="small" themeColor="textSecondary">{notice}</ThemedText> : null}
 
         {validation.exercisesError ? (
           <ThemedText themeColor="textSecondary">{validation.exercisesError}</ThemedText>

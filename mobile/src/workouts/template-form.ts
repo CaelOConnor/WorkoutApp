@@ -2,7 +2,9 @@
 // (state, action) -> new state, like log-form.ts. The screen holds it with useReducer and only
 // dispatches actions, so every rule here (no duplicate exercises, set counts within limits,
 // reordering) is tested without rendering anything.
-import type { Exercise, TemplateBody, TemplateDetail } from '@shared/models';
+import type { Exercise, TemplateBody, TemplateDetail, WorkoutDetail } from '@shared/models';
+
+import { groupSetsByExercise } from './detail';
 
 // Set counts the server accepts (template_exercises.set_count CHECK).
 export const MIN_SET_COUNT = 1;
@@ -52,6 +54,33 @@ export function templateFormFrom(template: TemplateDetail): TemplateForm {
     setCount: e.set_count,
   }));
   return { name: template.name, exercises, nextKey: exercises.length + 1 };
+}
+
+export interface TemplateFromWorkout {
+  form: TemplateForm;
+  // Names of the exercises whose set count was cut to MAX_SET_COUNT, for a note on the form.
+  cappedExercises: string[];
+}
+
+// "Save as template" on a workout: its exercises in the order they were first done, each with as
+// many sets as it had, and a blank name. A workout only lists an exercise through its sets
+// (WorkoutDetail has no separate exercise list), so an exercise with no sets is left out simply by
+// grouping. Counts above the server's limit are capped and reported, not rejected.
+export function templateFromWorkout(workout: WorkoutDetail): TemplateFromWorkout {
+  const groups = groupSetsByExercise(workout.sets);
+  const exercises = groups.map((group, i) => ({
+    key: i + 1,
+    exerciseId: group.exerciseId,
+    name: group.exerciseName,
+    setCount: clampSetCount(group.sets.length),
+  }));
+  const cappedExercises = groups
+    .filter((group) => group.sets.length > MAX_SET_COUNT)
+    .map((group) => group.exerciseName);
+  return {
+    form: { name: '', exercises, nextKey: exercises.length + 1 },
+    cappedExercises,
+  };
 }
 
 // Math.min/max keep a value inside [MIN, MAX]: "clamping".
