@@ -83,6 +83,10 @@ function RootNavigator() {
         <Stack.Screen name="workouts/[id]/edit" options={SHEET_OPTIONS} />
         {/* The screen replaces this title with the exercise's name once it has loaded. */}
         <Stack.Screen name="progress/[exerciseId]" options={{ title: 'Progress' }} />
+        <Stack.Screen name="templates/new" options={{ title: 'New template' }} />
+        {/* The screen replaces this title with the template's name once it has loaded. */}
+        <Stack.Screen name="templates/[id]/index" options={{ title: 'Template' }} />
+        <Stack.Screen name="templates/[id]/edit" options={{ title: 'Edit template' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ title: 'Log in' }} />

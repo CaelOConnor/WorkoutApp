@@ -1,6 +1,6 @@
-import type { WorkoutDetailSet } from '@shared/models';
+import type { TemplateDetail, WorkoutDetailSet } from '@shared/models';
 
-import { exerciseNames, setCountLabel } from './summary';
+import { exerciseNames, setCountLabel, templateSummary } from './summary';
 
 // A full set with sensible defaults; `overrides` replaces only the fields a test cares about.
 // Partial<T> makes every field optional, and the spread puts the overrides on top.
@@ -39,5 +39,21 @@ describe('setCountLabel', () => {
     expect(setCountLabel(0)).toBe('0 sets');
     expect(setCountLabel(1)).toBe('1 set');
     expect(setCountLabel(12)).toBe('12 sets');
+  });
+});
+
+describe('templateSummary', () => {
+  it('lists each exercise with its set count, in order', () => {
+    const template: TemplateDetail = {
+      id: 1,
+      name: 'Leg day',
+      exercises: [
+        { exercise_id: 2, exercise_name: 'Squat', set_count: 3 },
+        { exercise_id: 5, exercise_name: 'RDL', set_count: 3 },
+        { exercise_id: 7, exercise_name: 'Leg press', set_count: 4 },
+      ],
+    };
+
+    expect(templateSummary(template)).toBe('Squat 3 · RDL 3 · Leg press 4');
   });
 });

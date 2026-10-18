@@ -60,7 +60,7 @@ it('switches between the tabs', async () => {
 
   await fireEvent.press(tab('Templates'));
   expect(app.getPathname()).toBe('/templates');
-  expect(await screen.findByText(/^Saved workouts you can start from/)).toBeOnTheScreen();
+  expect(await screen.findByText('No templates yet')).toBeOnTheScreen();
 
   await fireEvent.press(tab('History'));
   expect(app.getPathname()).toBe('/');
