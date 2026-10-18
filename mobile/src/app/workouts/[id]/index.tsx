@@ -25,6 +25,7 @@ import {
 } from '@/workouts/detail';
 import { addSetBodyFrom, firstSetBody } from '@/workouts/forms';
 import { setCountLabel } from '@/workouts/summary';
+import { useFetchLastSets } from '@/workouts/use-templates';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
 
 // One workout: its date and notes, a card per exercise, and the ways to change them.
@@ -73,6 +74,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
   const router = useRouter();
   const theme = useTheme();
   const { addSet, removeExercise, deleteWorkout } = useWorkoutMutations(workout.id);
+  const fetchLastSets = useFetchLastSets();
   const groups = groupSetsByExercise(workout.sets);
   const id = String(workout.id);
 
@@ -137,7 +139,10 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
       return; // the picker was cancelled
     }
     change('Could not add exercise', async (leave) => {
-      const updated = await addSet.mutateAsync(firstSetBody(exercise.id, workout.sets));
+      // Last time's sets, to start from its first one. Only a prefill: if it can't be loaded,
+      // the set starts at 0 × 0 as for an exercise never logged, rather than adding nothing.
+      const lastTime = await fetchLastSets(exercise.id).catch(() => []);
+      const updated = await addSet.mutateAsync(firstSetBody(exercise.id, workout.sets, lastTime));
       const set = addedSet(workout.sets, updated.sets);
       if (set) {
         leave(() =>

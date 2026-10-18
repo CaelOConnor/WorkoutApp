@@ -21,27 +21,32 @@ export function noContentResponse(): Response {
   return new Response(null, { status: 204 });
 }
 
-// What a route handler receives: the parsed JSON body and the request headers.
+// What a route handler receives: the parsed JSON body, the request headers and the query string.
 export interface MockRequest {
   body: unknown;
   headers: Headers;
+  query: URLSearchParams;
 }
 
 // A Record keyed by 'METHOD /path'. The handler can be async, e.g. to hold a request open.
 export type MockRoutes = Record<string, (request: MockRequest) => Response | Promise<Response>>;
 
-// Replaces fetch for the current test (restore with jest.restoreAllMocks()). A request with no
-// matching route gets a 500 naming it, which surfaces as an ApiError instead of a silent hang.
+// Replaces fetch for the current test (restore with jest.restoreAllMocks()). A route matches the
+// exact 'METHOD /path?query' first, then 'METHOD /path' (whose handler reads `query`, e.g. for
+// any GET /exercises/last-sets?ids=...). A request with no matching route gets a 500 naming it,
+// which surfaces as an ApiError instead of a silent hang.
 export function mockApi(routes: MockRoutes): jest.SpiedFunction<typeof fetch> {
   return jest.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const path = String(input).replace(TEST_API_URL, '');
-    const key = `${init?.method ?? 'GET'} ${path}`;
-    const handler = routes[key];
+    const method = init?.method ?? 'GET';
+    const key = `${method} ${path}`;
+    const [pathOnly = '', queryString = ''] = path.split('?');
+    const handler = routes[key] ?? routes[`${method} ${pathOnly}`];
     if (!handler) {
       return jsonResponse(500, { error: `No mock for ${key}` });
     }
     const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
-    return handler({ body, headers: new Headers(init?.headers) });
+    return handler({ body, headers: new Headers(init?.headers), query: new URLSearchParams(queryString) });
   });
 }
 

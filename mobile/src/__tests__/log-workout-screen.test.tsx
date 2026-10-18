@@ -1,6 +1,12 @@
 // Integration tests for the "Log workout" screen: the real app from src/app/, signed in, with a
 // fake backend.
-import type { CreateExerciseBody, CreateWorkoutBody, Exercise, WorkoutDetail } from '@shared/models';
+import type {
+  CreateExerciseBody,
+  CreateWorkoutBody,
+  Exercise,
+  ExerciseLastSets,
+  WorkoutDetail,
+} from '@shared/models';
 import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import * as SecureStore from 'expo-secure-store';
@@ -31,11 +37,15 @@ const EXERCISES: Exercise[] = [
 // `exercises` is the server's list: POST /exercises adds to it (ids from 100), with the real
 // route's 409 for a name already in it, ignoring case. A test can also push to it directly, as if
 // the exercise was created on another phone after the app loaded its list.
-function fakeServer() {
+// `lastSets`: last time's sets per exercise id, for GET /exercises/last-sets (none by default:
+// every exercise is never logged). `holdLastSets()` keeps that request unanswered until the
+// returned function is called.
+function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
   const saved: CreateWorkoutBody[] = [];
   const exercises: Exercise[] = [...EXERCISES];
   const createdExercises: CreateExerciseBody[] = [];
   let gate: Promise<void> | null = null;
+  let lastSetsGate: Promise<void> | null = null;
 
   function workout(): WorkoutDetail | null {
     const body = saved[0];
@@ -66,6 +76,16 @@ function fakeServer() {
     // The chooser behind "+ Log workout" lists them.
     'GET /templates': () => jsonResponse(200, []),
     'GET /exercises': () => jsonResponse(200, exercises),
+    // Like the real route: in the order asked, leaving out exercises never logged.
+    'GET /exercises/last-sets': async ({ query }) => {
+      await lastSetsGate;
+      const ids = (query.get('ids') ?? '').split(',').map(Number);
+      const found: ExerciseLastSets[] = ids.flatMap((id) => {
+        const sets = lastSets[id];
+        return sets ? [{ exercise_id: id, date: '2026-10-09', sets }] : [];
+      });
+      return jsonResponse(200, found);
+    },
     'POST /exercises': async ({ body }) => {
       await gate;
       // `as`: trusted like the POST /workouts body below.
@@ -104,7 +124,18 @@ function fakeServer() {
     };
   }
 
-  return { saved, exercises, createdExercises, fetchMock, holdSave };
+  function holdLastSets(): () => void {
+    let release = () => {};
+    lastSetsGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    return () => {
+      lastSetsGate = null;
+      release();
+    };
+  }
+
+  return { saved, exercises, createdExercises, fetchMock, holdSave, holdLastSets };
 }
 
 beforeEach(async () => {
@@ -130,14 +161,15 @@ async function openLogScreen() {
   return { getPathname: () => rendered.getPathname() };
 }
 
-// Opens the picker, searches, and picks `name`.
+// Opens the picker, searches, and picks `name`, then waits for its rows (they appear once last
+// time's sets have been fetched).
 async function addExercise(name: string, search = '') {
   await fireEvent.press(screen.getByRole('button', { name: 'Add exercise' }));
   if (search) {
     await fireEvent.changeText(await screen.findByLabelText('Search exercises'), search);
   }
   await fireEvent.press(await screen.findByRole('button', { name }));
-  await screen.findByTestId(`${name} card`);
+  await screen.findByLabelText(`${name} set 1 reps`);
 }
 
 async function fillSet(name: string, n: number, reps: string, weight: string) {
@@ -250,6 +282,77 @@ it('explains instead of saving when no set is ticked, and skips untouched sets',
 
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0]?.sets).toEqual([{ exercise_id: 2, reps: 5, weight: 225, unit: 'lb' }]);
+});
+
+describe("last time's sets as hints", () => {
+  it('loads them on the new card, then shows one hinted row per set, and saves ticked ones', async () => {
+    const { saved, holdLastSets } = fakeServer({
+      2: [
+        { reps: 5, weight: 225, unit: 'lb' },
+        { reps: 5, weight: 235, unit: 'lb' },
+        { reps: 3, weight: 245, unit: 'lb' },
+      ],
+    });
+    await openLogScreen();
+    const release = holdLastSets();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Add exercise' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Squat' }));
+
+    // The card is there with a spinner and no rows, so nothing changes once typing starts.
+    const card = await screen.findByTestId('Squat card');
+    expect(within(card).getByLabelText('Loading last time for Squat')).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Squat set 1 reps')).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Add Squat set' })).not.toBeOnTheScreen();
+    release();
+
+    expect(await screen.findByLabelText('Squat set 1 reps')).toHaveProp('placeholder', '5');
+    expect(screen.getByLabelText('Squat set 2 weight')).toHaveProp('placeholder', '235');
+    expect(screen.getByLabelText('Squat set 3 reps')).toHaveProp('placeholder', '3');
+    expect(screen.queryByLabelText('Squat set 4 reps')).not.toBeOnTheScreen();
+    expect(screen.queryByLabelText('Loading last time for Squat')).not.toBeOnTheScreen();
+    expect(screen.getByRole('checkbox', { name: 'Squat set 1 done' })).not.toBeChecked();
+
+    // ✓ keeps last time's numbers; typing replaces the hint for that field only.
+    await fireEvent.press(screen.getByRole('checkbox', { name: 'Squat set 1 done' }));
+    await fireEvent.changeText(screen.getByLabelText('Squat set 3 reps'), '4');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));
+
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]?.sets).toEqual([
+      { exercise_id: 2, reps: 5, weight: 225, unit: 'lb' },
+      { exercise_id: 2, reps: 4, weight: 245, unit: 'lb' },
+    ]);
+  });
+
+  it('gives a never-logged exercise one empty row, in the unit used last', async () => {
+    const { fetchMock } = fakeServer({ 2: [{ reps: 8, weight: 100, unit: 'kg' }] });
+    await openLogScreen();
+    await addExercise('Squat');
+
+    await addExercise('Deadlift');
+
+    expect(screen.getByLabelText('Deadlift set 1 reps')).toHaveProp('placeholder', 'Reps');
+    expect(screen.queryByLabelText('Deadlift set 2 reps')).not.toBeOnTheScreen();
+    expect(
+      within(screen.getByLabelText('Deadlift set 1 unit')).getByRole('radio', { name: 'kg' })
+    ).toBeChecked();
+    expect(requestsMade(fetchMock)).toContain('GET /exercises/last-sets?ids=3');
+  });
+
+  it('gives a custom exercise just created one empty row', async () => {
+    fakeServer({ 2: [{ reps: 8, weight: 100, unit: 'lb' }] });
+    await openLogScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Add exercise' }));
+    await screen.findByRole('button', { name: 'Squat' });
+    await fireEvent.changeText(screen.getByLabelText('Search exercises'), 'Cable Fly');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create "Cable Fly"' }));
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByLabelText('Cable Fly set 1 reps')).toHaveProp('placeholder', 'Reps');
+    expect(screen.queryByLabelText('Cable Fly set 2 reps')).not.toBeOnTheScreen();
+  });
 });
 
 it('leaves without asking when nothing was entered', async () => {

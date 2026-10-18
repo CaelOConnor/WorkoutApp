@@ -5,6 +5,7 @@
 // so the user gets a clear message here instead of a generic 400.
 import type {
   AddSetBody,
+  ExerciseLastSets,
   UpdateWorkoutBody,
   WeightUnit,
   WorkoutDetail,
@@ -93,13 +94,19 @@ export function addSetBodyFrom(lastSet: WorkoutDetailSet): AddSetBody {
   };
 }
 
-// The first set of an exercise newly added to a saved workout: a placeholder at 0 reps × 0, saved
-// straight away so the set sheet can open on it for the real numbers. 0 is valid for both fields,
-// and stands out if the user leaves it. The unit is the workout's last one (lb if it has no sets).
+// The first set of an exercise newly added to a saved workout, saved straight away so the set
+// sheet can open on it: last time's first set (GET /exercises/last-sets), which the user edits
+// if today differs. For an exercise never logged, a placeholder at 0 reps × 0 (valid for both
+// fields, and it stands out if left) in the workout's last unit (lb if it has no sets).
 export function firstSetBody(
   exerciseId: number,
-  workoutSets: readonly WorkoutDetailSet[]
+  workoutSets: readonly WorkoutDetailSet[],
+  lastTime: ExerciseLastSets['sets']
 ): AddSetBody {
+  const first = lastTime[0];
+  if (first) {
+    return { exercise_id: exerciseId, reps: first.reps, weight: first.weight, unit: first.unit };
+  }
   return { exercise_id: exerciseId, reps: 0, weight: 0, unit: workoutSets.at(-1)?.unit ?? 'lb' };
 }
 

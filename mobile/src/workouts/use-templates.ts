@@ -95,9 +95,29 @@ export function useTemplateMutations(templateId: number) {
 export function useLastSets(exerciseIds: readonly number[]) {
   const api = useApi();
   return useQuery({
+    ...lastSetsQuery(api, exerciseIds),
+    enabled: exerciseIds.length > 0,
+  });
+}
+
+// The same request on demand, for one exercise just picked (the log screen's picker, the detail
+// screen's "+ Add exercise"): resolves with that exercise's last sets, [] if never logged.
+// fetchQuery uses the cache only while it's fresh, and the default staleTime of 0 means never, so
+// this always asks the server: a set logged a minute ago counts.
+export function useFetchLastSets() {
+  const api = useApi();
+  const queryClient = useQueryClient();
+  return async (exerciseId: number) => {
+    const lastSets = await queryClient.fetchQuery(lastSetsQuery(api, [exerciseId]));
+    return lastSets[0]?.sets ?? [];
+  };
+}
+
+// Shared by both, so they read and fill one cache entry per list of ids.
+function lastSetsQuery(api: ReturnType<typeof useApi>, exerciseIds: readonly number[]) {
+  return {
     // The ids in order: the response follows it, so [3, 1] and [1, 3] are different results.
     queryKey: ['last-sets', ...exerciseIds],
     queryFn: () => api.request(lastSetsPath(exerciseIds), { guard: isExerciseLastSetsList }),
-    enabled: exerciseIds.length > 0,
-  });
+  };
 }

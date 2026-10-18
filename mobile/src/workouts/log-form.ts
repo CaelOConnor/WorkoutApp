@@ -34,7 +34,13 @@ export interface LogExercise {
   exerciseId: number;
   name: string;
   sets: LogSet[];
+  // True from picking the exercise until last time's sets have arrived (fillLastSets): the card
+  // shows a spinner and has no rows yet, so no row changes after the user starts typing.
+  loading: boolean;
 }
+
+// One set of last time, as GET /exercises/last-sets returns it.
+type LastSet = ExerciseLastSets['sets'][number];
 
 export interface LogForm {
   date: string; // 'YYYY-MM-DD'
@@ -50,7 +56,12 @@ export interface LogForm {
 export type LogAction =
   | { type: 'setDate'; date: string }
   | { type: 'setNotes'; notes: string }
-  | { type: 'addExercise'; exercise: Pick<Exercise, 'id' | 'name'> }
+  // `loading`: added without rows, waiting for fillLastSets. Otherwise one empty row.
+  | { type: 'addExercise'; exercise: Pick<Exercise, 'id' | 'name'>; loading?: boolean }
+  // Last time's sets for a loading card; null (or none) for an exercise never logged. By exercise
+  // id, which the screen knows when the answer arrives (unlike the card's key), and which is in
+  // the form at most once.
+  | { type: 'fillLastSets'; exerciseId: number; lastSets: readonly LastSet[] | null }
   | { type: 'removeExercise'; exerciseKey: number }
   | { type: 'addSet'; exerciseKey: number }
   | { type: 'removeSet'; exerciseKey: number; setKey: number }
@@ -64,6 +75,14 @@ export function createLogForm(today: string): LogForm {
 // A row with nothing typed, no hint and no tick: left like that, it isn't saved.
 function emptySet(key: number, unit: WeightUnit): LogSet {
   return { key, reps: '', weight: '', unit, hint: null, ticked: false };
+}
+
+// A row hinted with one of last time's sets, in its unit. Untouched and unticked.
+function hintedSet(key: number, last: LastSet): LogSet {
+  return {
+    ...emptySet(key, last.unit),
+    hint: { reps: String(last.reps), weight: String(last.weight) },
+  };
 }
 
 // "Start workout" on a template: its exercises in order, each with set_count rows hinted from
@@ -86,18 +105,19 @@ export function createLogFormFromTemplate(
       const key = exerciseKey + 1 + i;
       // `??`: last time's set i, or (past its end) its last set; undefined if never logged.
       const previous = last[i] ?? last.at(-1);
-      return previous
-        ? {
-            ...emptySet(key, previous.unit),
-            hint: { reps: String(previous.reps), weight: String(previous.weight) },
-          }
-        : emptySet(key, unit);
+      return previous ? hintedSet(key, previous) : emptySet(key, unit);
     });
     form = {
       ...form,
       exercises: [
         ...form.exercises,
-        { key: exerciseKey, exerciseId: exercise.exercise_id, name: exercise.exercise_name, sets },
+        {
+          key: exerciseKey,
+          exerciseId: exercise.exercise_id,
+          name: exercise.exercise_name,
+          sets,
+          loading: false,
+        },
       ],
       nextKey: exerciseKey + 1 + sets.length,
     };
@@ -107,8 +127,15 @@ export function createLogFormFromTemplate(
 
 // The unit of the most recently added set anywhere in the form, so a new exercise starts in the
 // unit the user is already using. 'lb' (the server's default) when there are no sets yet.
+// Exercises without rows (a card still loading, or one whose sets were all removed) are skipped.
 function lastUnit(form: LogForm): WeightUnit {
-  return form.exercises.at(-1)?.sets.at(-1)?.unit ?? 'lb';
+  for (let i = form.exercises.length - 1; i >= 0; i--) {
+    const unit = form.exercises[i]?.sets.at(-1)?.unit;
+    if (unit) {
+      return unit;
+    }
+  }
+  return 'lb';
 }
 
 // Applies `change` to the one exercise with this key, leaving the others as they are.
@@ -139,19 +166,41 @@ export function logFormReducer(form: LogForm, action: LogAction): LogForm {
       if (form.exercises.some((e) => e.exerciseId === action.exercise.id)) {
         return form;
       }
+      const loading = action.loading ?? false;
       const exercise: LogExercise = {
         key: form.nextKey,
         exerciseId: action.exercise.id,
         name: action.exercise.name,
-        sets: [emptySet(form.nextKey + 1, lastUnit(form))],
+        sets: loading ? [] : [emptySet(form.nextKey + 1, lastUnit(form))],
+        loading,
       };
       return { ...form, exercises: [...form.exercises, exercise], nextKey: form.nextKey + 2 };
+    }
+
+    case 'fillLastSets': {
+      const exercise = form.exercises.find((e) => e.exerciseId === action.exerciseId);
+      // Only once, and only for a card still there: the answer can arrive after the user removed
+      // the card, and it must never replace rows the user may already be typing into.
+      if (!exercise?.loading) {
+        return form;
+      }
+      const last = action.lastSets ?? [];
+      const sets =
+        last.length > 0
+          ? last.map((set, i) => hintedSet(form.nextKey + i, set))
+          : [emptySet(form.nextKey, lastUnit(form))];
+      const next = updateExercise(form, exercise.key, (e) => ({ ...e, sets, loading: false }));
+      return { ...next, nextKey: form.nextKey + sets.length };
     }
 
     case 'removeExercise':
       return { ...form, exercises: form.exercises.filter((e) => e.key !== action.exerciseKey) };
 
     case 'addSet': {
+      // A loading card has no rows to copy yet, and its rows are about to arrive.
+      if (form.exercises.some((e) => e.key === action.exerciseKey && e.loading)) {
+        return form;
+      }
       const next = updateExercise(form, action.exerciseKey, (exercise) => {
         const previous = exercise.sets.at(-1);
         // A copy of the previous set (usually the next set is the same), hint and tick included,

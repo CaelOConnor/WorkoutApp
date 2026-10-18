@@ -4,6 +4,7 @@ import type {
   AddSetBody,
   CreateExerciseBody,
   Exercise,
+  ExerciseLastSets,
   UpdateWorkoutBody,
   WorkoutDetail,
   WorkoutDetailSet,
@@ -54,7 +55,8 @@ function initialWorkout(): WorkoutDetail {
 // A tiny in-memory backend for workout 3: writes change `state.workout`, and every GET returns
 // the current state, so the screen's refetch after a change shows what the server now holds.
 // `state.workout` is null once the workout is deleted. Every request body is recorded.
-function fakeServer() {
+// `lastSets`: last time's sets per exercise id, for GET /exercises/last-sets (none by default).
+function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
   const state: { workout: WorkoutDetail | null; bodies: unknown[] } = {
     workout: initialWorkout(),
     bodies: [],
@@ -94,6 +96,15 @@ function fakeServer() {
     'GET /workouts': () => jsonResponse(200, state.workout ? [state.workout] : []),
     'GET /workouts/3': () => (state.workout ? jsonResponse(200, state.workout) : notFound()),
     'GET /exercises': () => jsonResponse(200, exercises),
+    // Like the real route: in the order asked, leaving out exercises never logged.
+    'GET /exercises/last-sets': ({ query }) => {
+      const ids = (query.get('ids') ?? '').split(',').map(Number);
+      const found: ExerciseLastSets[] = ids.flatMap((id) => {
+        const sets = lastSets[id];
+        return sets ? [{ exercise_id: id, date: '2026-10-09', sets }] : [];
+      });
+      return jsonResponse(200, found);
+    },
     'POST /exercises': write(({ body }) => {
       state.bodies.push(body);
       const { name, muscle_group } = body as CreateExerciseBody;
@@ -485,7 +496,33 @@ describe('+ Add exercise', () => {
     await act(async () => onDismiss());
   }
 
-  it("offers only exercises not in the workout, adds the first set, and opens it to fill in", async () => {
+  it("starts the exercise from last time's first set, then opens it to adjust", async () => {
+    const { state, fetchMock } = fakeServer({
+      3: [
+        { reps: 3, weight: 140, unit: 'kg' },
+        { reps: 2, weight: 150, unit: 'kg' },
+      ],
+    });
+    const app = await renderApp('/workouts/3');
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Add exercise' }));
+    const deadlift = await screen.findByRole('button', { name: 'Deadlift' });
+    await closePicker(() => fireEvent.press(deadlift));
+
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/sets/99'));
+    // Last time's first set, in its own unit (the workout's other sets are in lb).
+    expect(state.bodies).toEqual([{ exercise_id: 3, reps: 3, weight: 140, unit: 'kg' }]);
+    // Asked fresh, before the set was saved.
+    const requests = requestsMade(fetchMock);
+    expect(requests.indexOf('GET /exercises/last-sets?ids=3')).toBeLessThan(
+      requests.indexOf('POST /workouts/3/sets')
+    );
+    // The sheet opens on those numbers, to change if today was different.
+    expect(await screen.findByLabelText('Reps')).toHaveDisplayValue('3');
+    expect(screen.getByLabelText('Weight')).toHaveDisplayValue('140');
+  });
+
+  it("offers only exercises not in the workout, adds a never-logged one's first set at 0 × 0, and opens it", async () => {
     const { state } = fakeServer();
     const app = await renderApp('/workouts/3');
 

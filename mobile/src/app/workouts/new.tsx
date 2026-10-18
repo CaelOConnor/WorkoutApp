@@ -2,7 +2,15 @@ import type { ExerciseLastSets, TemplateDetail } from '@shared/models';
 import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useReducer, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { ApiError } from '@/api/client';
 import { errorMessage } from '@/api/error-message';
@@ -33,7 +41,7 @@ import {
   type LogSet,
   type SetErrors,
 } from '@/workouts/log-form';
-import { useLastSets, useTemplate } from '@/workouts/use-templates';
+import { useFetchLastSets, useLastSets, useTemplate } from '@/workouts/use-templates';
 import { useCreateWorkout } from '@/workouts/use-workouts';
 
 // Log a new workout: date, notes, and exercises with their sets, saved in one POST /workouts.
@@ -122,6 +130,7 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const createWorkout = useCreateWorkout();
+  const fetchLastSets = useFetchLastSets();
   const guard = usePressGuard();
   // Set just before leaving after a save, so the discard check below lets that navigation through.
   // A ref, not state: it must be readable in the same moment, before any re-render.
@@ -238,8 +247,14 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
         excludeIds={form.exercises.map((e) => e.exerciseId)}
         onClose={() => setPickerOpen(false)}
         onPick={(exercise) => {
-          dispatch({ type: 'addExercise', exercise });
+          // The card appears straight away, loading; its rows follow once last time is known.
+          dispatch({ type: 'addExercise', exercise, loading: true });
           setPickerOpen(false);
+          // A failed request counts as never logged (one empty row): hints are only a prefill,
+          // and the user can still log the exercise.
+          void fetchLastSets(exercise.id)
+            .catch(() => null)
+            .then((lastSets) => dispatch({ type: 'fillLastSets', exerciseId: exercise.id, lastSets }));
         }}
       />
     </ThemedView>
@@ -286,13 +301,18 @@ function ExerciseCard({ exercise, dispatch, errorsFor }: ExerciseCardProps) {
         />
       ))}
 
-      <View style={styles.cardFooter}>
-        <TextButton
-          label="+ Add set"
-          accessibilityLabel={`Add ${name} set`}
-          onPress={() => dispatch({ type: 'addSet', exerciseKey })}
-        />
-      </View>
+      {exercise.loading ? (
+        // Until last time's sets arrive: no rows yet, so none can change under the user's thumb.
+        <ActivityIndicator style={styles.cardLoading} accessibilityLabel={`Loading last time for ${name}`} />
+      ) : (
+        <View style={styles.cardFooter}>
+          <TextButton
+            label="+ Add set"
+            accessibilityLabel={`Add ${name} set`}
+            onPress={() => dispatch({ type: 'addSet', exerciseKey })}
+          />
+        </View>
+      )}
     </ThemedView>
   );
 }
@@ -414,4 +434,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   cardFooter: { alignItems: 'flex-start' },
+  cardLoading: { alignSelf: 'flex-start', paddingVertical: Spacing.two },
 });

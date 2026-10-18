@@ -124,6 +124,7 @@ describe('logFormReducer', () => {
         name: 'Squat',
         // No hint (nothing to suggest) and not ticked: left untouched, it isn't saved.
         sets: [{ key: expect.any(Number), reps: '', weight: '', unit: 'lb', hint: null, ticked: false }],
+        loading: false,
       },
     ]);
   });
@@ -261,6 +262,90 @@ describe('ticking sets', () => {
 
     // Squat's third row has last time's last set as its hint, unticked; the copy is the same.
     expect(rowsOf(added, 0)?.at(-1)).toEqual(['', '', 'lb', { reps: '3', weight: '245' }, false]);
+  });
+});
+
+describe('adding an exercise with last time as hints', () => {
+  // Picked from the picker: added while last time is fetched, then filled in.
+  function picked(form: LogForm, exercise = BENCH): LogForm {
+    return apply(form, { type: 'addExercise', exercise, loading: true });
+  }
+
+  function fill(form: LogForm, index: number, lastSets: ExerciseLastSets['sets'] | null): LogForm {
+    const exerciseId = form.exercises[index]?.exerciseId ?? -1;
+    return apply(form, { type: 'fillLastSets', exerciseId, lastSets });
+  }
+
+  it('adds the exercise as loading, with no rows yet', () => {
+    const form = picked(createLogForm(TODAY));
+
+    expect(form.exercises).toEqual([
+      { key: expect.any(Number), exerciseId: 1, name: 'Bench Press', sets: [], loading: true },
+    ]);
+  });
+
+  it("then gives it one hinted, unticked row per set of last time, in that set's unit", () => {
+    const form = fill(picked(createLogForm(TODAY)), 0, [
+      { reps: 8, weight: 60, unit: 'kg' },
+      { reps: 6, weight: 62.5, unit: 'kg' },
+    ]);
+
+    expect(form.exercises[0]?.loading).toBe(false);
+    expect(rowsOf(form, 0)).toEqual([
+      ['', '', 'kg', { reps: '8', weight: '60' }, false],
+      ['', '', 'kg', { reps: '6', weight: '62.5' }, false],
+    ]);
+  });
+
+  it('gives a never-logged exercise one empty row in the unit used last, as before', () => {
+    let form = withSquat();
+    form = apply(form, {
+      type: 'updateSet',
+      exerciseKey: exerciseKey(form, 0),
+      setKey: setAt(form, 0, 0).key,
+      change: { unit: 'kg' },
+    });
+    // The loading card has no rows, so "the unit used last" looks past it, to Squat's kg.
+    form = fill(picked(form), 1, null);
+
+    expect(rowsOf(form, 1)).toEqual([['', '', 'kg', null, false]]);
+    expect(fill(picked(createLogForm(TODAY)), 0, [])).toEqual(
+      fill(picked(createLogForm(TODAY)), 0, null)
+    );
+  });
+
+  it('gives every new row its own key', () => {
+    const form = fill(picked(withSquat()), 1, LAST_SETS[1]?.sets ?? null);
+    const keys = form.exercises.flatMap((e) => [e.key, ...e.sets.map((s) => s.key)]);
+
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(Math.max(...keys)).toBeLessThan(form.nextKey);
+  });
+
+  it('ignores last time arriving for a card that was removed or already filled', () => {
+    const form = picked(createLogForm(TODAY));
+    const key = exerciseKey(form, 0);
+    const filled = fill(form, 0, null);
+    const removed = apply(form, { type: 'removeExercise', exerciseKey: key });
+
+    expect(fill(filled, 0, [{ reps: 1, weight: 1, unit: 'lb' }])).toBe(filled);
+    expect(apply(removed, { type: 'fillLastSets', exerciseId: BENCH.id, lastSets: null })).toBe(
+      removed
+    );
+  });
+
+  it('adds no set to a card that is still loading', () => {
+    const form = picked(createLogForm(TODAY));
+
+    expect(apply(form, { type: 'addSet', exerciseKey: exerciseKey(form, 0) })).toBe(form);
+  });
+
+  it('saves nothing from a loading card', () => {
+    const form = picked(withSquat());
+
+    expect(validateLogForm(form).body?.sets).toEqual([
+      { exercise_id: 2, reps: 5, weight: 225, unit: 'lb' },
+    ]);
   });
 });
 

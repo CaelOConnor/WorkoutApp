@@ -147,13 +147,28 @@ describe('repsError and weightError', () => {
 });
 
 describe('firstSetBody', () => {
-  it("starts a new exercise at 0 reps × 0 (to fill in next), in the workout's last unit", () => {
-    const sets = [set({ unit: 'lb' }), set({ unit: 'kg' })];
+  it("starts from last time's first set: its reps, weight and unit", () => {
+    const sets = [set({ unit: 'lb' })];
+    const lastTime = [
+      { reps: 6, weight: 102.5, unit: 'kg' as const },
+      { reps: 4, weight: 110, unit: 'kg' as const },
+    ];
 
-    expect(firstSetBody(7, sets)).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'kg' });
+    expect(firstSetBody(7, sets, lastTime)).toEqual({
+      exercise_id: 7,
+      reps: 6,
+      weight: 102.5,
+      unit: 'kg',
+    });
   });
 
-  it('uses lb in a workout with no sets', () => {
-    expect(firstSetBody(7, [])).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'lb' });
+  it("starts a never-logged exercise at 0 reps × 0 (to fill in next), in the workout's last unit", () => {
+    const sets = [set({ unit: 'lb' }), set({ unit: 'kg' })];
+
+    expect(firstSetBody(7, sets, [])).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'kg' });
+  });
+
+  it('uses lb for a never-logged exercise in a workout with no sets', () => {
+    expect(firstSetBody(7, [], [])).toEqual({ exercise_id: 7, reps: 0, weight: 0, unit: 'lb' });
   });
 });
