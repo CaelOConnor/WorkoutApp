@@ -63,6 +63,8 @@ function fakeServer() {
       const w = workout();
       return jsonResponse(200, w ? [w] : []);
     },
+    // The chooser behind "+ Log workout" lists them.
+    'GET /templates': () => jsonResponse(200, []),
     'GET /exercises': () => jsonResponse(200, exercises),
     'POST /exercises': async ({ body }) => {
       await gate;
@@ -116,12 +118,14 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// Starts on the history and opens the log screen with its header button, like a user.
+// Starts on the history and opens an empty log screen with its header button and the chooser
+// sheet, like a user. (Starting from a template: start-from-template.test.tsx.)
 // See auth-screens.test.tsx for why the Promise is awaited separately.
 async function openLogScreen() {
   const rendered = renderRouter('./src/app', { initialUrl: '/' });
   await rendered;
   await fireEvent.press(await screen.findByRole('button', { name: 'Log workout' }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Empty workout' }));
   await waitFor(() => expect(rendered.getPathname()).toBe('/workouts/new'));
   return { getPathname: () => rendered.getPathname() };
 }
@@ -208,16 +212,13 @@ it('shows validation errors next to the fields and saves nothing while any set i
   await openLogScreen();
   await addExercise('Squat');
   const save = screen.getByRole('button', { name: 'Save workout' });
-  expect(save).toBeDisabled();
 
-  // An invalid value shows its error as soon as it's typed, and Save stays disabled.
+  // An invalid value shows its error as soon as it's typed (typing ticked the set).
   await fillSet('Squat', 1, '5', '1.234');
   expect(screen.getByText(/at most 2 decimals/)).toBeOnTheScreen();
-  expect(save).toBeDisabled();
 
   await fireEvent.changeText(screen.getByLabelText('Squat set 1 weight'), '100');
   expect(screen.queryByText(/at most 2 decimals/)).not.toBeOnTheScreen();
-  expect(save).toBeEnabled();
 
   // An empty field only shows its error once Save is pressed.
   await fireEvent.press(screen.getByRole('button', { name: 'Add Squat set' }));
@@ -227,6 +228,28 @@ it('shows validation errors next to the fields and saves nothing while any set i
 
   expect(await screen.findByText('Reps must be a whole number.')).toBeOnTheScreen();
   expect(requestsMade(fetchMock)).not.toContain('POST /workouts');
+});
+
+it('explains instead of saving when no set is ticked, and skips untouched sets', async () => {
+  const { saved, fetchMock } = fakeServer();
+  await openLogScreen();
+  await addExercise('Squat');
+  const save = screen.getByRole('button', { name: 'Save workout' });
+
+  // Save stays enabled and says why it can't save.
+  await fireEvent.press(save);
+  expect(await screen.findByText(/Tick ✓ on at least one set/)).toBeOnTheScreen();
+  expect(requestsMade(fetchMock)).not.toContain('POST /workouts');
+
+  // Typing ticks the set; a second, untouched exercise isn't saved and shows no error.
+  await fillSet('Squat', 1, '5', '225');
+  expect(screen.getByRole('checkbox', { name: 'Squat set 1 done' })).toBeChecked();
+  expect(screen.queryByText(/Tick ✓ on at least one set/)).not.toBeOnTheScreen();
+  await addExercise('Deadlift');
+  await fireEvent.press(save);
+
+  await waitFor(() => expect(saved).toHaveLength(1));
+  expect(saved[0]?.sets).toEqual([{ exercise_id: 2, reps: 5, weight: 225, unit: 'lb' }]);
 });
 
 it('leaves without asking when nothing was entered', async () => {

@@ -5,7 +5,7 @@ import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/api/client';
 import { errorMessage } from '@/api/error-message';
 import { Button } from '@/components/button';
-import { ask, confirm } from '@/components/dialogs';
+import { confirm } from '@/components/dialogs';
 import { ErrorState, LoadingState, MessageState } from '@/components/query-states';
 import { TextButton } from '@/components/text-button';
 import { ThemedText } from '@/components/themed-text';
@@ -68,14 +68,11 @@ function TemplateContent({ template }: { template: TemplateDetail }) {
   // One guard for the screen: Edit, Start workout and Delete can't overlap or run twice.
   const guard = usePressGuard();
 
-  // Placeholder until starting a workout from a template is built (Phase 5, step 10). Awaited
-  // inside the guard, so a double tap shows one dialog.
+  // The log screen, prefilled from this template. push, not replace: back returns here.
   function startWorkout() {
-    void guard.run(async () => {
-      await ask('Coming soon', 'Starting a workout from a template is on its way.', [
-        { text: 'OK' },
-      ]);
-    });
+    guard.navigate(() =>
+      router.push({ pathname: '/workouts/new', params: { templateId: id } })
+    );
   }
 
   function deleteFlow() {

@@ -509,23 +509,6 @@ describe('leaving the form', () => {
   });
 });
 
-it('shows a placeholder for "Start workout" until it is built', async () => {
-  fakeServer();
-  const dialogs = recordAlerts();
-  const app = await openTemplatesTab();
-  await openTemplate(app, 'Leg day', 1);
-
-  await fireEvent.press(await screen.findByRole('button', { name: 'Start workout' }));
-
-  expect(dialogs.spy).toHaveBeenCalledWith(
-    'Coming soon',
-    expect.any(String),
-    expect.any(Array),
-    expect.anything()
-  );
-  expect(app.getPathname()).toBe('/templates/1');
-});
-
 it('shows "Template not found" for a template that was deleted elsewhere', async () => {
   const { templates } = fakeServer();
   const app = await openTemplatesTab();

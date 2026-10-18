@@ -123,13 +123,17 @@ it('opens a workout when its row is pressed', async () => {
   await waitFor(() => expect(app.getPathname()).toBe('/workouts/2'));
 });
 
-it('opens the log workout screen from the header', async () => {
-  mockApi({ 'GET /workouts': () => jsonResponse(200, []) });
+it('opens the chooser (empty workout or a template) from the header', async () => {
+  mockApi({
+    'GET /workouts': () => jsonResponse(200, []),
+    'GET /templates': () => jsonResponse(200, []),
+  });
   const app = await renderApp();
 
   await fireEvent.press(await screen.findByRole('button', { name: 'Log workout' }));
 
-  await waitFor(() => expect(app.getPathname()).toBe('/workouts/new'));
+  await waitFor(() => expect(app.getPathname()).toBe('/workouts/start'));
+  expect(await screen.findByRole('button', { name: 'Empty workout' })).toBeOnTheScreen();
 });
 
 // Double-tapping something that navigates must open one screen, not two stacked copies. A single
@@ -150,11 +154,14 @@ describe('double-tapping', () => {
   });
 
   it('+ Log workout opens it once', async () => {
-    mockApi({ 'GET /workouts': () => jsonResponse(200, []) });
+    mockApi({
+      'GET /workouts': () => jsonResponse(200, []),
+      'GET /templates': () => jsonResponse(200, []),
+    });
     const app = await renderApp();
 
     await doubleTap(await screen.findByRole('button', { name: 'Log workout' }));
-    await waitFor(() => expect(app.getPathname()).toBe('/workouts/new'));
+    await waitFor(() => expect(app.getPathname()).toBe('/workouts/start'));
     await act(() => router.back());
 
     expect(app.getPathname()).toBe('/');

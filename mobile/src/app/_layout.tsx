@@ -77,6 +77,7 @@ function RootNavigator() {
         />
         {/* Every signed-in screen must be listed here: a route left out of all the
             Stack.Protected groups would be reachable while signed out. */}
+        <Stack.Screen name="workouts/start" options={SHEET_OPTIONS} />
         <Stack.Screen name="workouts/new" options={{ title: 'Log workout' }} />
         <Stack.Screen name="workouts/[id]/index" options={{ title: 'Workout' }} />
         <Stack.Screen name="workouts/[id]/sets/[setId]" options={SHEET_OPTIONS} />

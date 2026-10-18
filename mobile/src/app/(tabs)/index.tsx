@@ -45,7 +45,8 @@ export default function HistoryScreen() {
             <TextButton
               label="+ Log workout"
               accessibilityLabel="Log workout"
-              onPress={() => guard.navigate(() => router.push('/workouts/new'))}
+              // Opens a sheet to choose an empty workout or a template.
+              onPress={() => guard.navigate(() => router.push('/workouts/start'))}
             />
           ),
         }}
