@@ -1,16 +1,10 @@
-// Shared data types for the WorkoutApp.
-// This file must not import anything server-only (express, pg, ...) so the mobile app can reuse it later.
+// Shared types for the backend and the mobile app.
+// Don't import server-only packages (express, pg) here because your phone cant run them and this file is imported in the app
 
-// ---------- Primitives ----------
-
-// A union of string literals: only these exact strings are allowed.
 export type WeightUnit = 'lb' | 'kg';
 
-// ---------- Database rows (mirror backend/migrations/) ----------
-// These describe what `pg` hands back for each table. Nullable columns are `T | null`.
-// Note: `pg` turns TIMESTAMP columns into JS `Date` objects (ISO strings once sent through
-// res.json()). DATE columns are the exception: db/pool.ts keeps them as 'YYYY-MM-DD' strings.
-// NUMERIC columns (sets.weight) would be strings; db/pool.ts parses them to numbers.
+// ---------- Database rows ----------
+// The shape of one row from each table
 
 export interface User {
   id: number;
@@ -19,40 +13,33 @@ export interface User {
   created_at: Date;
 }
 
-// Utility type: pick a subset of another type's fields. Safe to send to clients (no password hash).
+// What we send to clients: never the password hash.
 export type PublicUser = Pick<User, 'id' | 'email'>;
 
 export interface Exercise {
   id: number;
   name: string;
   muscle_group: string | null;
-  created_by: number | null;
+  created_by: number | null; // number is the user who created the exercise null = built in exercise
 }
 
 export interface Workout {
   id: number;
   user_id: number;
-  // A calendar day, 'YYYY-MM-DD', with no time or time zone (see db/pool.ts).
-  date: string;
+  date: string; // 'YYYY-MM-DD' used in pool.ts calandar day not Date
   notes: string | null;
 }
 
-// Named WorkoutSet (not Set) to avoid clashing with JavaScript's built-in Set.
 export interface WorkoutSet {
   id: number;
   workout_id: number;
   exercise_id: number;
-  // The set's position among its exercise's sets in this workout: 1, 2, 3... with no gaps
-  // (Squat 1-3, Bench 1-2). The server assigns it, and renumbers after a delete.
   set_number: number;
   reps: number;
-  // NUMERIC(6,2) in Postgres. pg would return it as a string ('135.00'); db/pool.ts parses it
-  // to a number, which holds every NUMERIC(6,2) value exactly. Trailing zeros are gone: 135, not 135.00.
-  weight: number;
+  weight: number; // NUMERIC(6,2) in Postgres; pool.ts converts it from a string
   unit: WeightUnit;
 }
 
-// A reusable workout plan (e.g. "Leg day"): exercises in order, each with a number of sets.
 export interface Template {
   id: number;
   user_id: number;
@@ -62,19 +49,19 @@ export interface Template {
 export interface TemplateExercise {
   template_id: number;
   exercise_id: number;
-  position: number; // only compared, never shown; the API returns exercises in this order
-  set_count: number; // 1 to 20
+  position: number;
+  set_count: number;
 }
 
-// ---------- API request bodies ----------
+// ---------- Request bodies ----------
+// The JSON the app sends for each request.
 
-// One set in POST /workouts. No set_number: the server numbers each exercise's sets 1, 2, 3...
-// in the order they're sent.
+// No set_number: the server numbers sets in the order they're sent.
 export interface NewSetInput {
   exercise_id: number;
   reps: number;
   weight: number;
-  unit?: WeightUnit; // `?` = optional; the server defaults to 'lb'
+  unit?: WeightUnit; // defaults to 'lb'
 }
 
 export interface CreateWorkoutBody {
@@ -83,41 +70,29 @@ export interface CreateWorkoutBody {
   sets: NewSetInput[];
 }
 
-// PATCH /workouts/:id. Both optional: a missing key means "leave that column alone".
+// Any field left out stays as it is.
 export interface UpdateWorkoutBody {
   date?: string;
-  // `?` allows the key to be missing; `| null` allows an explicit null, which clears the notes.
-  // date has no `| null` because the column is NOT NULL.
-  notes?: string | null;
+  notes?: string | null; // null = clear the notes.
 }
 
-// POST /workouts/:id/sets: the same fields as a set in POST /workouts. The new set becomes the last
-// of its exercise in the workout (its highest set_number + 1, or 1).
 export type AddSetBody = NewSetInput;
 
-// PATCH /workouts/:id/sets/:setId. Omit<T, K> drops exercise_id: a set's exercise can't change
-// (delete it and add one under the right exercise). Partial<T> then makes every remaining field
-// optional, which is exactly "send only what changes".
+// Can't change a set's exercise every other field is optional.
 export type UpdateSetBody = Partial<Omit<NewSetInput, 'exercise_id'>>;
 
-// GET /exercises/:id/progress query string. Every key is optional. A missing unit means the unit
-// of the caller's most recent set of that exercise; a missing from/to leaves that end open.
 export interface ProgressQuery {
-  unit?: WeightUnit;
-  from?: string; // 'YYYY-MM-DD', inclusive
-  to?: string; // 'YYYY-MM-DD', inclusive
+  unit?: WeightUnit; // defaults to the unit of your most recent set
+  from?: string;
+  to?: string;
 }
 
-// POST /exercises: a custom exercise for the caller. Both are trimmed by the server; a missing,
-// null or blank muscle_group is stored as null.
 export interface CreateExerciseBody {
   name: string;
   muscle_group?: string | null;
 }
 
-// POST /templates (and, from the next step, PUT /templates/:id, which replaces the whole template).
-// The name is trimmed by the server. Exercises are in the order the log screen will show them;
-// at least one, and each exercise at most once. Position isn't sent: it's the array order.
+// Exercise order is the array order.
 export interface TemplateBody {
   name: string;
   exercises: Pick<TemplateExercise, 'exercise_id' | 'set_count'>[];
@@ -129,16 +104,18 @@ export interface AuthBody {
 }
 
 // ---------- Auth ----------
+// How the server knows who's making each request.
 
-// What /auth/login signs into the JWT, and what requireAuth reads back out.
+// What's stored inside the login token.
 export interface TokenPayload {
   userId: number;
 }
 
-// The logged-in user, as attached to req.user by requireAuth.
+// Attached to req.user by requireAuth.
 export type AuthUser = Pick<User, 'id'>;
 
-// ---------- API responses ----------
+// ---------- Responses ----------
+// The JSON the server sends back for each request.
 
 export interface ErrorResponse {
   error: string;
@@ -148,65 +125,48 @@ export interface CreateWorkoutResponse {
   id: number;
 }
 
-// One set inside a WorkoutDetail. No workout_id: it's nested under its workout already.
-export type WorkoutDetailSet = Pick<
-  WorkoutSet,
-  'id' | 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'
-> & {
+export type WorkoutDetailSet = Pick<WorkoutSet, 'id' | 'exercise_id' | 'set_number' | 'reps' | 'weight' | 'unit'> & {
   exercise_name: string;
 };
 
-// One workout with its sets nested, grouped by exercise: exercises in the order they were first
-// added to the workout, each one's sets by set_number. GET /workouts/:id returns one;
-// GET /workouts returns an array of them (sets: [] for a workout with no sets).
-// No user_id: the caller can only ever see their own workouts, so it would add nothing.
+// A workout with its sets nested, grouped by exercise.
 export type WorkoutDetail = Pick<Workout, 'id' | 'date' | 'notes'> & {
   sets: WorkoutDetailSet[];
 };
 
-// One exercise of a TemplateDetail, with its name for display.
 export type TemplateDetailExercise = Pick<TemplateExercise, 'exercise_id' | 'set_count'> & {
   exercise_name: string;
 };
 
-// A template with its exercises in order. POST /templates and GET /templates/:id return one;
-// GET /templates returns an array of them, by name ignoring case. No user_id, as in WorkoutDetail.
 export type TemplateDetail = Pick<Template, 'id' | 'name'> & {
   exercises: TemplateDetailExercise[];
 };
 
-// One workout day of one exercise. Only sets with 1+ reps count, every weight is converted to the
-// response's unit first, and each number is rounded to 1 decimal.
+// One workout day of one exercise on the progress chart.
 export interface ProgressPoint {
-  date: string; // 'YYYY-MM-DD'; workouts on the same day are merged into one point
-  top_weight: number; // heaviest set
-  e1rm: number; // best estimated one-rep max (Epley: weight × (1 + reps/30); 1 rep = the weight)
+  date: string;
+  top_weight: number;
+  e1rm: number;
   volume: number; // sum of weight × reps
-  sets: number; // how many sets counted
+  sets: number;
 }
 
-// GET /exercises/:id/progress. points are oldest first; [] if nothing matches.
 export interface ExerciseProgress {
   exercise_id: number;
   exercise_name: string;
-  unit: WeightUnit; // the unit every number in points is in
+  unit: WeightUnit;
   points: ProgressPoint[];
 }
 
-// One item of GET /exercises/logged: an exercise the caller has logged a set of 1+ reps for.
-// unit is that most recent set's unit, which is also the progress endpoint's default.
 export type LoggedExercise = Pick<Exercise, 'id' | 'name'> & {
-  last_date: string; // 'YYYY-MM-DD'
+  last_date: string;
   unit: WeightUnit;
 };
 
-// One item of GET /exercises/last-sets?ids=: the caller's sets of one exercise from the most recent
-// workout (by date, then the workout logged last) that has a set of it with 1+ reps. Only its 1+
-// rep sets, by set_number. The app prefills new sets from these. Exercises never logged by the
-// caller are left out; the rest come in the order their ids were sent.
+// What the grey hints show: your sets from last time.
 export interface ExerciseLastSets {
   exercise_id: number;
-  date: string; // 'YYYY-MM-DD', that workout's date
+  date: string;
   sets: Pick<WorkoutSet, 'reps' | 'weight' | 'unit'>[];
 }
 
