@@ -68,8 +68,6 @@ export async function loadProgressPoints(
      )
      SELECT date,
             ROUND(MAX(weight), 1) AS top_weight,
-            -- Epley; a single is its own weight (the formula would add 1/30).
-            ROUND(MAX(CASE WHEN reps = 1 THEN weight ELSE weight * (1 + reps / 30.0) END), 1) AS e1rm,
             ROUND(SUM(weight * reps), 1) AS volume,
             COUNT(*)::int AS sets
      FROM converted

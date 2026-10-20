@@ -6,15 +6,14 @@ import { addMonths, dayNumber } from './dates';
 
 // The three numbers each point carries. Extract<keyof X, ...> keeps only the listed keys, and
 // fails to compile if one of them stops being a key of ProgressPoint.
-export type Metric = Extract<keyof ProgressPoint, 'e1rm' | 'top_weight' | 'volume'>;
+export type Metric = Extract<keyof ProgressPoint, 'top_weight' | 'volume'>;
 
 export const METRICS: readonly { value: Metric; label: string }[] = [
-  { value: 'e1rm', label: 'Est. 1RM' },
   { value: 'top_weight', label: 'Heaviest set' },
   { value: 'volume', label: 'Volume' },
 ];
 
-export const DEFAULT_METRIC: Metric = 'e1rm';
+export const DEFAULT_METRIC: Metric = 'top_weight';
 
 // `as const` makes this a tuple of literals, and (typeof RANGES)[number] is the union of its
 // elements: '3M' | '6M' | '1Y' | 'All'. The type is derived from the list, so they can't drift.

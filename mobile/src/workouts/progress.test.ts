@@ -12,7 +12,7 @@ import {
 } from './progress';
 
 function point(overrides: Partial<ProgressPoint>): ProgressPoint {
-  return { date: '2026-09-01', top_weight: 100, e1rm: 116.7, volume: 500, sets: 1, ...overrides };
+  return { date: '2026-09-01', top_weight: 100, volume: 500, sets: 1, ...overrides };
 }
 
 describe('rangeStart', () => {
@@ -43,15 +43,15 @@ describe('progressPath', () => {
 
 describe('chartPoints', () => {
   const points = [
-    point({ date: '2026-09-01', e1rm: 121, volume: 950 }),
-    point({ date: '2026-09-03', e1rm: 126.7, volume: 1325 }),
+    point({ date: '2026-09-01', top_weight: 120, volume: 950 }),
+    point({ date: '2026-09-03', top_weight: 105, volume: 1325 }),
   ];
 
   it("gives each point's day number and the chosen metric", () => {
     // Day numbers, not indexes: a two-week gap between workouts shows as a gap on the chart.
-    expect(chartPoints(points, 'e1rm')).toEqual([
-      { day: dayNumber('2026-09-01'), value: 121 },
-      { day: dayNumber('2026-09-03'), value: 126.7 },
+    expect(chartPoints(points, 'top_weight')).toEqual([
+      { day: dayNumber('2026-09-01'), value: 120 },
+      { day: dayNumber('2026-09-03'), value: 105 },
     ]);
     expect(chartPoints(points, 'volume').map((p) => p.value)).toEqual([950, 1325]);
   });
@@ -69,7 +69,7 @@ describe('bestPoint', () => {
   });
 
   it('is undefined with no points', () => {
-    expect(bestPoint([], 'e1rm')).toBeUndefined();
+    expect(bestPoint([], 'top_weight')).toBeUndefined();
   });
 });
 

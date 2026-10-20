@@ -187,7 +187,7 @@ describe('isCreateWorkoutResponse', () => {
 });
 
 describe('isExerciseProgress', () => {
-  const validPoint = { date: '2026-09-03', top_weight: 105, e1rm: 126.7, volume: 1325, sets: 2 };
+  const validPoint = { date: '2026-09-03', top_weight: 105, volume: 1325, sets: 2 };
   const validProgress = {
     exercise_id: 1,
     exercise_name: 'Squat',
@@ -201,7 +201,7 @@ describe('isExerciseProgress', () => {
   });
 
   it('accepts zeros (bodyweight sets)', () => {
-    const zeros = { ...validPoint, top_weight: 0, e1rm: 0, volume: 0 };
+    const zeros = { ...validPoint, top_weight: 0, volume: 0 };
     expect(isExerciseProgress({ ...validProgress, points: [zeros] })).toBe(true);
   });
 
@@ -210,7 +210,7 @@ describe('isExerciseProgress', () => {
     ['missing points', { ...validProgress, points: undefined }],
     ['a missing exercise_name', { ...validProgress, exercise_name: undefined }],
     ['a point with a timestamp date', { ...validProgress, points: [{ ...validPoint, date: '2026-09-03T00:00:00Z' }] }],
-    ['a point with a string metric', { ...validProgress, points: [{ ...validPoint, e1rm: '126.7' }] }],
+    ['a point with a string metric', { ...validProgress, points: [{ ...validPoint, top_weight: '105' }] }],
     ['a point with a negative volume', { ...validProgress, points: [{ ...validPoint, volume: -1 }] }],
     ['a point with NaN', { ...validProgress, points: [{ ...validPoint, top_weight: Number.NaN }] }],
     ['a point with 0 sets (every point has at least one)', { ...validProgress, points: [{ ...validPoint, sets: 0 }] }],

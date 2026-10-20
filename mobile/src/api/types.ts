@@ -139,7 +139,6 @@ function isProgressPoint(value: unknown): value is ProgressPoint {
     isRecord(value) &&
     isDateString(value.date) &&
     isWeight(value.top_weight) &&
-    isWeight(value.e1rm) &&
     isWeight(value.volume) &&
     // A point only exists for a day with at least one counted set.
     isPositiveInteger(value.sets)

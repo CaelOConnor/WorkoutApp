@@ -146,7 +146,6 @@ export type TemplateDetail = Pick<Template, 'id' | 'name'> & {
 export interface ProgressPoint {
   date: string;
   top_weight: number;
-  e1rm: number;
   volume: number; // sum of weight × reps
   sets: number;
 }

@@ -28,8 +28,8 @@ const SQUAT_LB: ExerciseProgress = {
   exercise_name: 'Squat',
   unit: 'lb',
   points: [
-    { date: '2026-09-01', top_weight: 120, e1rm: 121, volume: 950, sets: 3 },
-    { date: '2026-09-03', top_weight: 105, e1rm: 126.7, volume: 1325, sets: 2 },
+    { date: '2026-09-01', top_weight: 120, volume: 950, sets: 3 },
+    { date: '2026-09-03', top_weight: 105, volume: 1325, sets: 2 },
   ],
 };
 
@@ -37,8 +37,8 @@ const SQUAT_KG: ExerciseProgress = {
   ...SQUAT_LB,
   unit: 'kg',
   points: [
-    { date: '2026-09-01', top_weight: 54.4, e1rm: 54.9, volume: 430.9, sets: 3 },
-    { date: '2026-09-03', top_weight: 47.6, e1rm: 57.5, volume: 601, sets: 2 },
+    { date: '2026-09-01', top_weight: 54.4, volume: 430.9, sets: 3 },
+    { date: '2026-09-03', top_weight: 47.6, volume: 601, sets: 2 },
   ],
 };
 
@@ -112,7 +112,7 @@ describe('the exercise list (/progress)', () => {
 });
 
 describe('the chart screen (/progress/[exerciseId])', () => {
-  it('opens from the list, showing 6 months of estimated 1RM', async () => {
+  it('opens from the list, showing 6 months of heaviest sets', async () => {
     const fetchMock = server({
       'GET /exercises/logged': () => jsonResponse(200, LOGGED),
       'GET /exercises/1/progress?from=2026-04-14': () => jsonResponse(200, SQUAT_LB),
@@ -122,8 +122,9 @@ describe('the chart screen (/progress/[exerciseId])', () => {
     await fireEvent.press(await screen.findByRole('button', { name: /^Squat/ }));
 
     expect(app.getPathname()).toBe('/progress/1');
-    expect(await pointRows()).toEqual(['Thu, Sep 3: 126.7 lb, 2 sets', 'Tue, Sep 1: 121 lb, 3 sets']);
-    expect(screen.getByRole('radio', { name: 'Est. 1RM' })).toBeChecked();
+    expect(await pointRows()).toEqual(['Thu, Sep 3: 105 lb, 2 sets', 'Tue, Sep 1: 120 lb, 3 sets']);
+    expect(screen.getByRole('radio', { name: 'Heaviest set' })).toBeChecked();
+    expect(screen.queryByRole('radio', { name: 'Est. 1RM' })).not.toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: '6M' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'lb' })).toBeChecked();
     // No unit sent: the server picks the one last logged.
@@ -176,7 +177,7 @@ describe('the chart screen (/progress/[exerciseId])', () => {
 
     await fireEvent.press(screen.getByRole('radio', { name: 'kg' }));
 
-    expect(await screen.findByLabelText('Thu, Sep 3: 57.5 kg, 2 sets')).toBeOnTheScreen();
+    expect(await screen.findByLabelText('Thu, Sep 3: 47.6 kg, 2 sets')).toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'kg' })).toBeChecked();
   });
 
@@ -185,7 +186,7 @@ describe('the chart screen (/progress/[exerciseId])', () => {
       exercise_id: 3,
       exercise_name: 'Pull-up',
       unit: 'lb',
-      points: [{ date: '2026-10-05', top_weight: 0, e1rm: 0, volume: 0, sets: 3 }],
+      points: [{ date: '2026-10-05', top_weight: 0, volume: 0, sets: 3 }],
     };
     server({ 'GET /exercises/3/progress?from=2026-04-14': () => jsonResponse(200, pullUps) });
     await renderApp('/progress/3');

@@ -66,11 +66,10 @@ describe('GET /exercises/:id/progress', () => {
       exercise_name: 'Squat',
       unit: 'lb',
       points: [
-        // e1rm: 5×100 → 116.7, 3×110 → 121, 1×120 → 120 (a single is its own weight; plain
-        // Epley would say 124 and win). volume: 500 + 330 + 120.
-        { date: '2026-09-01', top_weight: 120, e1rm: 121, volume: 950, sets: 3 },
-        // e1rm: 8×100 → 126.67, rounded to 1 decimal. volume: 800 + 525.
-        { date: '2026-09-03', top_weight: 105, e1rm: 126.7, volume: 1325, sets: 2 },
+        // volume: 500 + 330 + 120.
+        { date: '2026-09-01', top_weight: 120, volume: 950, sets: 3 },
+        // volume: 800 + 525.
+        { date: '2026-09-03', top_weight: 105, volume: 1325, sets: 2 },
       ],
     };
     expect(res.body).toEqual(expected);
@@ -78,9 +77,9 @@ describe('GET /exercises/:id/progress', () => {
 
   it.each([
     // 200 lb = 90.718474 kg, so 100 kg is the top set. Unconverted, 200 would win.
-    ['kg', { top_weight: 100, e1rm: 100, volume: 190.7 }],
+    ['kg', { top_weight: 100, volume: 190.7 }],
     // 100 kg = 220.462262 lb.
-    ['lb', { top_weight: 220.5, e1rm: 220.5, volume: 420.5 }],
+    ['lb', { top_weight: 220.5, volume: 420.5 }],
   ] as const)('converts every set to %s before aggregating', async (unit, metrics) => {
     await logDay(lifter.id, '2026-09-01', squatId, [[1, 100, 'kg'], [1, 200, 'lb']]);
 
@@ -108,8 +107,8 @@ describe('GET /exercises/:id/progress', () => {
     expect(body.unit).toBe('kg');
     expect(body.points).toEqual([
       // 100 lb = 45.359237 kg
-      { date: '2026-09-01', top_weight: 45.4, e1rm: 52.9, volume: 226.8, sets: 1 },
-      { date: '2026-09-02', top_weight: 50, e1rm: 58.3, volume: 250, sets: 1 },
+      { date: '2026-09-01', top_weight: 45.4, volume: 226.8, sets: 1 },
+      { date: '2026-09-02', top_weight: 50, volume: 250, sets: 1 },
     ]);
   });
 
@@ -122,7 +121,7 @@ describe('GET /exercises/:id/progress', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.points).toEqual([
-      { date: '2026-09-01', top_weight: 100, e1rm: 116.7, volume: 500, sets: 1 },
+      { date: '2026-09-01', top_weight: 100, volume: 500, sets: 1 },
     ]);
   });
 
@@ -132,7 +131,7 @@ describe('GET /exercises/:id/progress', () => {
     const res = await getProgress(squatId);
 
     expect(res.body.points).toEqual([
-      { date: '2026-09-01', top_weight: 0, e1rm: 0, volume: 0, sets: 1 },
+      { date: '2026-09-01', top_weight: 0, volume: 0, sets: 1 },
     ]);
   });
 
