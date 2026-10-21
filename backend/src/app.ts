@@ -9,28 +9,27 @@ import authRouter from './routes/auth';
 
 const app = express();
 
-// First, so its timing covers everything after it. Not under Vitest (which sets NODE_ENV to
-// 'test'): hundreds of request lines would bury the test output.
+// Middleware runs in the order it's added.
+// Logger first so its timing covers everything, its off in tests to keep the output readable.
 if (process.env.NODE_ENV !== 'test') {
   app.use(requestLogger(console.log));
 }
 app.use(cors());
 app.use(express.json());
 
-// Each router's paths are relative to where it's mounted: '/login' in authRouter is /auth/login.
-app.use('/', healthRouter);
+// Router paths are relative: '/login' in authRouter is /auth/login.
+app.use('/', healthRouter); // checks server is up
 app.use('/exercises', exercisesRouter);
 app.use('/workouts', workoutsRouter);
 app.use('/templates', templatesRouter);
 app.use('/auth', authRouter);
 
-// Catches anything a route throws or rejects with (e.g. GET /exercises when the DB is down),
-// so clients never see Express's default error page with the message and stack trace.
-// Express only treats a middleware as an error handler if it declares all four parameters.
-// Registered after the routers, because Express runs middleware in the order it was added.
+// Last, so it catches errors from every route. Sends a generic message instead of
+// Express's default page, which would show the stack trace.
+// Must take all four parameters, or Express won't treat it as an error handler.
 const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   console.error(`${req.method} ${req.path} failed:`, err);
-  // If the response already started streaming we can't send a new status; let Express close it.
+  // Too late to change the status once the response has started.
   if (res.headersSent) {
     return next(err);
   }
@@ -38,5 +37,5 @@ const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 };
 app.use(errorHandler);
 
-// Exported without calling listen(), so tests can hand `app` to supertest without opening port 3000.
+// No listen() here (index.ts does that), so tests can use the app without opening a port.
 export default app;
