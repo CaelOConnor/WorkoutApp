@@ -13,24 +13,18 @@ import { parseId, parseTemplateBody } from '../validation';
 import type { ErrorResponse, Template, TemplateDetail } from '../types/models';
 import type { NoParams } from './types';
 
-// Mounted at /templates in app.ts. Templates are per user, so auth runs on the whole router, and
-// every query filters on the caller's user_id: another user's template is a 404, like a missing one.
+// Mounted at /templates. Templates are per user, so every route needs auth.
 const templatesRouter = Router();
 
 templatesRouter.use(requireAuth);
 
-// The client errors a template write (POST or PUT) can hit in the database, as a status and body,
-// or null for anything else (which the route rethrows, for a 500).
+// Database errors that are the client's fault when creating or editing a template.
+// Returns null for anything else, which becomes a 500.
 function templateWriteError(err: unknown, name: string): { status: number; body: ErrorResponse } | null {
-  // The unique index on (user_id, lower(name)) is the only duplicate check: unlike exercises,
-  // there are no built-in templates whose names would also count. It also settles two requests
-  // for one name at once, since only one of them can commit it. A PUT that keeps its own name
-  // doesn't clash: the index compares against the other rows, not the one being updated.
+  // The unique index is enough here: there are no built-in templates to check against.
   if (isUniqueViolation(err, 'templates_user_id_lower_name_key')) {
     return { status: 409, body: { error: `A template named "${name}" already exists` } };
   }
-  // A missing exercise, or another user's custom one (template_exercises_exercise_visible):
-  // the same 400, so the id doesn't reveal which.
   if (isUnknownExerciseError(err)) {
     return { status: 400, body: { error: 'Unknown exercise_id' } };
   }
@@ -51,7 +45,7 @@ templatesRouter.post(
     const user = getAuthUser(req);
 
     try {
-      // One transaction: if an exercise is rejected, the template row goes too.
+      // All or nothing: a bad exercise undoes the template too.
       const templateId = await withTransaction(async (client) => {
         const result = await client.query<Pick<Template, 'id'>>(
           'INSERT INTO templates (user_id, name) VALUES ($1, $2) RETURNING id',
@@ -80,10 +74,12 @@ templatesRouter.post(
   }
 );
 
+// all your templates, for the Templates tab list.
 templatesRouter.get('/', async (req: Request, res: Response<TemplateDetail[]>) => {
   res.json(await listTemplateDetails(getAuthUser(req).id));
 });
 
+// one template, for its detail screen (and when you start a workout from it or edit it).
 templatesRouter.get(
   '/:id',
   async (req: Request<{ id: string }>, res: Response<TemplateDetail | ErrorResponse>) => {
@@ -99,9 +95,8 @@ templatesRouter.get(
   }
 );
 
-// Replaces the whole template: its name, and its exercise list (order, which exercises, set counts).
-// The edit screen holds the whole template anyway, and replacing every row at positions 1..n means
-// a reorder never swaps two positions in place.
+// PUT replaces the whole template: name, exercises, order and set counts.
+// The edit screen has the whole template anyway, and replacing the list makes reordering simple.
 templatesRouter.put(
   '/:id',
   async (
@@ -120,12 +115,9 @@ templatesRouter.put(
     const user = getAuthUser(req);
 
     try {
-      // All or nothing: if the new list has an unknown exercise, the rename and the deleted rows
-      // roll back too.
+      // All or nothing: a bad exercise undoes the rename and the deletes too.
       const found = await withTransaction(async (client) => {
-        // The UPDATE below would lock the template row too (an UPDATE locks the rows it changes),
-        // but locking first says so explicitly, doubles as the ownership check, and keeps edits
-        // one at a time even if the UPDATE later moves or is skipped when the name is unchanged.
+        // Checks ownership and makes edits happen one at a time.
         if (!(await lockTemplate(client, id, user.id))) {
           return false;
         }
@@ -153,8 +145,7 @@ templatesRouter.put(
   }
 );
 
-// Its exercise rows go with it (ON DELETE CASCADE). Workouts started from it are copies, so
-// they're untouched. One statement, so no transaction or lock is needed.
+// Its exercises are deleted too (cascade). Workouts started from it are copies, so they stay.
 templatesRouter.delete(
   '/:id',
   async (req: Request<{ id: string }>, res: Response<ErrorResponse>) => {
@@ -169,8 +160,7 @@ templatesRouter.delete(
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
-    // 204 No Content: success with no body. end() sends it without one.
-    return res.status(204).end();
+    return res.status(204).end(); // success, no body
   }
 );
 

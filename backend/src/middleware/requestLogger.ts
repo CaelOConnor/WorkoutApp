@@ -1,26 +1,17 @@
 import type { RequestHandler } from 'express';
 
-// Logs one line per request once it's over: 'DELETE /workouts/3/sets/5 204 12ms', or
-// 'GET /workouts aborted by client after 10004ms' when the client hung up before the answer (the
-// app gives up after 10 s). Added to find out what the phone actually sends, e.g. how many DELETEs
-// one tap causes. Only the method and URL are logged: never bodies or headers, which hold
-// passwords and tokens.
-//
-// `log` and `now` are parameters (dependency injection) so a test can collect the lines and use a
-// fake clock; the app passes console.log and the default clock.
-// performance.now() is milliseconds since the process started, with fractions, and unlike
-// Date.now() it never jumps when the system clock is changed.
+// Logs one line per request when it's done, like 'DELETE /workouts/3/sets/5 204 12ms'.
+// Only the method and URL, never bodies or headers, which contain passwords and tokens.
+// log and now are parameters so tests can capture the lines and use a fake clock.
 export function requestLogger(
   log: (line: string) => void,
-  now: () => number = () => performance.now()
+  now: () => number = () => performance.now() // unlike Date.now(), never jumps if the clock changes
 ): RequestHandler {
   return (req, res, next) => {
     const start = now();
-    // Read before routing: a router mounted at /workouts sees req.url as just '/3/sets/5', but
-    // originalUrl keeps the whole path (and query string) as the client sent it.
+    // originalUrl is the full path. Inside a router, req.url would only be the part after the mount point.
     const request = `${req.method} ${req.originalUrl}`;
-    // 'close' fires once per response, both after a normal finish and when the connection drops
-    // first. writableFinished says which: true only if the whole response was handed off.
+    // Runs when the response ends. writableFinished is false if the client gave up first.
     res.on('close', () => {
       const ms = Math.round(now() - start);
       log(

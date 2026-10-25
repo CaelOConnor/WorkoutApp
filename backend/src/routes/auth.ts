@@ -8,8 +8,7 @@ import { isAuthBody } from '../validation';
 import type { ErrorResponse, LoginResponse, PublicUser, User } from '../types/models';
 import type { NoParams } from './types';
 
-// Mounted at /auth in app.ts, so '/signup' here is /auth/signup. No requireAuth: these
-// routes are how a user gets a token in the first place.
+// Mounted at /auth. No requireAuth: these routes are how a user gets a token.
 const authRouter = Router();
 
 authRouter.post(
@@ -24,6 +23,7 @@ authRouter.post(
     const { email, password } = req.body;
 
     try {
+      // Only the hash is stored. 10 sets how slow bcrypt is, which makes guessing expensive.
       const passwordHash = await bcrypt.hash(password, 10);
       const result = await pool.query<PublicUser>(
         'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
@@ -35,8 +35,7 @@ authRouter.post(
       }
       return res.status(201).json(user);
     } catch (err: unknown) {
-      // instanceof narrows `unknown` to pg's DatabaseError, which has a `code` property.
-      // 23505 = unique_violation (the email column is UNIQUE).
+      // 23505: the email is already taken.
       if (err instanceof DatabaseError && err.code === '23505') {
         return res.status(409).json({ error: 'Email already in use' });
       }
@@ -59,19 +58,20 @@ authRouter.post(
 
     try {
       const result = await pool.query<User>('SELECT * FROM users WHERE email = $1', [email]);
-      const user = result.rows[0]; // User | undefined
+      const user = result.rows[0];
 
+      // Same message for a wrong email and a wrong password,
+      // so the login screen can't be used to find out who has an account.
       if (!user) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
-      // From here on, TypeScript knows `user` is a User.
 
       const passwordMatches = await bcrypt.compare(password, user.password_hash);
-
       if (!passwordMatches) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
 
+      // The token requireAuth checks on every later request.
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
         expiresIn: '7d',
       });

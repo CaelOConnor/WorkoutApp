@@ -1,18 +1,12 @@
-// Adds `user` to Express's Request type ("declaration merging").
-//
-// @types/express declares an empty global `Express.Request` interface, and Express's own
-// Request type extends it. TypeScript merges every `interface` declaration with the same name,
-// so declaring it again here adds our field to every `req` in the app.
-//
-// `declare global` is needed because this file is a module (it has an import), and a module's
-// declarations are otherwise local to the file.
+// Adds `user` to Express's Request type. Interfaces with the same name merge,
+// so this adds the field to every req in the app.
+// declare global is needed so it applies outside this file.
 import type { AuthUser } from './models';
 
 declare global {
   namespace Express {
     interface Request {
-      // Optional: on routes without requireAuth, nothing sets it.
-      user?: AuthUser;
+      user?: AuthUser; // optional: only set on routes behind requireAuth
     }
   }
 }

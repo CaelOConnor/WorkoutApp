@@ -4,8 +4,7 @@ import type { Template, TemplateBody, TemplateDetail, TemplateDetailExercise } f
 
 type TemplateColumns = Pick<Template, 'id' | 'name'>;
 
-// Fetches the exercises of every given template in one query and nests them (2 queries in total,
-// as in workoutDetail.ts). Each template keeps its position in the input array.
+// Loads all the templates' exercises in one query and nests them (same as attachSets in workoutDetail.ts).
 async function attachExercises(templates: TemplateColumns[]): Promise<TemplateDetail[]> {
   if (templates.length === 0) {
     return [];
@@ -28,8 +27,7 @@ async function attachExercises(templates: TemplateColumns[]): Promise<TemplateDe
   return templates.map((template) => ({ ...template, exercises: exercisesByTemplate.get(template.id) ?? [] }));
 }
 
-// One of the user's templates, or null if it doesn't exist or is someone else's (callers give
-// both the same 404, so the response can't reveal that another user's template exists).
+// One template, or null if it doesn't exist or isn't this user's.
 export async function loadTemplateDetail(id: number, userId: number): Promise<TemplateDetail | null> {
   const result = await pool.query<TemplateColumns>('SELECT id, name FROM templates WHERE id = $1 AND user_id = $2', [
     id,
@@ -43,7 +41,7 @@ export async function loadTemplateDetail(id: number, userId: number): Promise<Te
   return detail ?? null;
 }
 
-// All of the user's templates, by name ignoring case ("arms" between "Abs" and "Back"), then id.
+// All of a user's templates, alphabetical ignoring case.
 export async function listTemplateDetails(userId: number): Promise<TemplateDetail[]> {
   const result = await pool.query<TemplateColumns>(
     'SELECT id, name FROM templates WHERE user_id = $1 ORDER BY lower(name), id',
@@ -52,12 +50,8 @@ export async function listTemplateDetails(userId: number): Promise<TemplateDetai
   return attachExercises(result.rows);
 }
 
-// Locks one of the user's templates until the transaction ends, and says whether it was found
-// (false for a missing one or another user's, which callers turn into a 404). Same idea as
-// lockWorkout: an edit replaces all of a template's exercise rows (DELETE, then INSERT), and two
-// edits at once would collide. Under READ COMMITTED, the second edit's DELETE waits on the first's
-// locked rows but doesn't see the rows the first then inserts, so its INSERT hits the primary key.
-// Locking the template row first makes the second edit wait before it reads anything.
+// Same as lockWorkout, for templates. An edit deletes and re-inserts all of a template's
+// exercises, so two edits at once would both insert and collide. Also checks ownership.
 export async function lockTemplate(client: PoolClient, templateId: number, userId: number): Promise<boolean> {
   const result = await client.query('SELECT 1 FROM templates WHERE id = $1 AND user_id = $2 FOR UPDATE', [
     templateId,
@@ -66,10 +60,8 @@ export async function lockTemplate(client: PoolClient, templateId: number, userI
   return result.rowCount === 1;
 }
 
-// Writes a template's exercises at positions 1..n, in the order given. Call inside a transaction.
-// unnest() turns the two arrays into rows, pairing elements by index (exercise_ids[i] with
-// set_counts[i]), and WITH ORDINALITY adds each row's index, counting from 1, which is the position.
-// One statement for all of them, rather than one INSERT per exercise.
+// Inserts all of a template's exercises in one query, in the order given. Use inside a transaction.
+// unnest pairs up the two arrays into rows; WITH ORDINALITY numbers them 1, 2, 3 for the position.
 export async function insertTemplateExercises(
   client: PoolClient,
   templateId: number,

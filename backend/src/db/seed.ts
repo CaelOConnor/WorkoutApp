@@ -1,6 +1,6 @@
 import pool from './pool';
 
-// A labeled tuple type: each entry is exactly [name, muscleGroup], both strings.
+// The built-in exercises. Each entry is [name, muscle group].
 const exercises: [name: string, muscleGroup: string][] = [
   ['Bench Press', 'Chest'],
   ['Squat', 'Legs'],
@@ -9,7 +9,7 @@ const exercises: [name: string, muscleGroup: string][] = [
   ['Barbell Row', 'Back'],
 ];
 
-// Exported so tests can call it; it doesn't close the pool, because the caller owns it.
+// Safe to run again: existing rows are skipped. Doesn't close the pool, because tests reuse it.
 export async function seed(): Promise<void> {
   await pool.query(
     `INSERT INTO users (email, password_hash) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING`,
@@ -17,7 +17,6 @@ export async function seed(): Promise<void> {
   );
 
   for (const [name, muscleGroup] of exercises) {
-    // A rerun hits the exercises_created_by_lower_name_key unique index and skips the row.
     await pool.query(
       'INSERT INTO exercises (name, muscle_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [name, muscleGroup]
@@ -25,8 +24,7 @@ export async function seed(): Promise<void> {
   }
 }
 
-// In CommonJS, require.main is the file Node was started with. This is true for
-// `npm run seed` but false when a test imports this file, so importing doesn't seed.
+// Only seeds when run directly (npm run seed), not when a test imports this file.
 if (require.main === module) {
   seed()
     .then(() => console.log('Seeded exercises'))
@@ -34,6 +32,6 @@ if (require.main === module) {
       console.error('Seed failed:', err);
       process.exitCode = 1;
     })
-    // Closing the pool lets Node exit on its own, instead of process.exit() cutting it off.
+    // Close the connections so the script can exit.
     .finally(() => pool.end());
 }

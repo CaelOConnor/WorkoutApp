@@ -8,12 +8,11 @@ import type {
   WeightUnit,
 } from '../types/models';
 
-// Progress counts only sets with 1+ reps. A 0-rep set is a failed attempt or the app's 0 × 0
-// placeholder: it adds nothing to volume, and it mustn't become the heaviest set or decide the unit.
-// "Most recent" is the latest workout date, then the latest workout and set on that date.
+// Queries for the progress chart and the "last time" hints.
+// Only sets with 1+ reps count. A 0-rep set is a placeholder or a failed attempt,
+// so it shouldn't count as the heaviest set, add to volume, or decide the unit.
 
-// The exercise if the user may see it (built-in, or their own custom one), else null. Another
-// user's custom exercise gets the same null as a missing id, so a 404 reveals nothing.
+// The exercise if the user can see it (built-in or their own), otherwise null.
 export async function findVisibleExercise(
   exerciseId: number,
   userId: number
@@ -25,7 +24,7 @@ export async function findVisibleExercise(
   return result.rows[0] ?? null;
 }
 
-// The unit of the user's most recent set (with reps) of an exercise, or null if there is none.
+// The unit of the user's most recent set of this exercise, or null if they've never logged it.
 export async function latestUnit(exerciseId: number, userId: number): Promise<WeightUnit | null> {
   const result = await pool.query<{ unit: WeightUnit }>(
     `SELECT s.unit
@@ -39,13 +38,11 @@ export async function latestUnit(exerciseId: number, userId: number): Promise<We
   return result.rows[0]?.unit ?? null;
 }
 
-// One point per workout date, oldest first, every weight converted to `unit` before aggregating
-// (otherwise MAX would compare 100 kg with 200 lb as plain numbers).
-// - The CTE (WITH ... AS) converts each set once, so the outer query only aggregates.
-// - 0.45359237 is the exact definition of a pound in kg.
-// - ROUND, SUM, and NUMERIC arithmetic return NUMERIC, which db/pool.ts parses to a number.
-// - COUNT returns BIGINT, which pg leaves as a string (it can pass 2^53), so it's cast to int.
-// - $4::date IS NULL makes a missing from/to match every row, so one query covers all four cases.
+// One chart point per workout date, oldest first.
+// First converts every set to the same unit, otherwise MAX would compare kg and lb as plain numbers.
+// 0.45359237 is the exact number of kg in a pound.
+// A missing from/to (NULL) matches every date, so one query covers all date ranges.
+// COUNT comes back as a string from pg, so it's cast to int.
 export async function loadProgressPoints(
   exerciseId: number,
   userId: number,
@@ -78,10 +75,9 @@ export async function loadProgressPoints(
   return result.rows;
 }
 
-// Every exercise the user has a set (with reps) of, with that most recent set's date and unit.
-// DISTINCT ON (e.id) is Postgres-only: it keeps the first row of each e.id group, in the
-// subquery's ORDER BY order, i.e. the most recent set. That ORDER BY must start with e.id, so
-// the list is sorted again outside: most recent first, then by name.
+// Every exercise the user has logged, with the date and unit of its most recent set.
+// DISTINCT ON keeps the first row per exercise, which is the most recent because of the ORDER BY.
+// Then the list is re-sorted: most recently logged first, then by name.
 export async function listLoggedExercises(userId: number): Promise<LoggedExercise[]> {
   const result = await pool.query<LoggedExercise>(
     `SELECT id, name, last_date, unit
@@ -99,14 +95,9 @@ export async function listLoggedExercises(userId: number): Promise<LoggedExercis
   return result.rows;
 }
 
-// For each exercise id the user has logged, the 1+ rep sets from their most recent workout with
-// one, in the order the ids are given (see ExerciseLastSets). Two steps in one query:
-// - latest: DISTINCT ON picks one workout per exercise, the first in ORDER BY order, i.e. the
-//   latest date, then the workout logged last. Only 1+ rep sets are looked at, so a workout with
-//   just the 0 x 0 placeholder of that exercise doesn't count as "last time".
-// - then that workout's 1+ rep sets of the exercise, by set_number.
-// Filtering on w.user_id means only the caller's own sets count, so another user's custom
-// exercise id finds nothing, the same as one never logged.
+// For the grey hints: each exercise's sets from the last workout it was done in.
+// latest finds that workout per exercise (DISTINCT ON again), then its sets are loaded in order.
+// Only the user's own sets count, so exercises they've never logged are left out.
 export async function loadLastSets(exerciseIds: number[], userId: number): Promise<ExerciseLastSets[]> {
   const result = await pool.query<{ exercise_id: number; date: string } & ExerciseLastSets['sets'][number]>(
     `WITH latest AS (
@@ -130,8 +121,7 @@ export async function loadLastSets(exerciseIds: number[], userId: number): Promi
     entry.sets.push(set);
     byExercise.set(exercise_id, entry);
   }
-  // Back in the caller's order. flatMap with [] for a missing entry drops it, which also narrows
-  // `ExerciseLastSets | undefined` to ExerciseLastSets without a cast.
+  // Back in the order the app asked for, skipping exercises never logged.
   return exerciseIds.flatMap((id) => {
     const entry = byExercise.get(id);
     return entry ? [entry] : [];

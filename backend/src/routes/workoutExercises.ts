@@ -6,15 +6,12 @@ import { getAuthUser } from '../middleware/auth';
 import { parseId } from '../validation';
 import type { ErrorResponse, WorkoutDetail } from '../types/models';
 
-// Mounted by workoutsRouter at '/:id/exercises', so '/:exerciseId' here is
-// /workouts/:id/exercises/:exerciseId. requireAuth has already run. A workout has no list of
-// exercises of its own: "the exercises in a workout" are just the exercise_ids of its sets.
-// mergeParams gives this router the parent's :id (see sets.ts).
+// Mounted at /workouts/:id/exercises, behind requireAuth. mergeParams gives it the parent's :id.
 const workoutExercisesRouter = Router({ mergeParams: true });
 
 type ExerciseParams = { id: string; exerciseId: string };
 
-// Removes every set of one exercise from a workout ("Remove exercise" in the app).
+// "Remove exercise" in the app: deletes all of one exercise's sets from a workout.
 workoutExercisesRouter.delete(
   '/:exerciseId',
   async (
@@ -31,20 +28,15 @@ workoutExercisesRouter.delete(
     }
     const user = getAuthUser(req);
 
-    // A union of string literals names each outcome, and TypeScript checks every comparison
-    // below against exactly these three (a typo like 'no set' is a compile error).
+    // Three possible results, so named strings instead of true/false.
     type Outcome = 'no workout' | 'no sets' | 'removed';
     const outcome = await withTransaction(async (client): Promise<Outcome> => {
-      // Locked like adding or deleting a set (see db/workoutLock.ts): a set of this exercise
-      // added at the same moment would otherwise be numbered after sets that are being removed.
-      // The lock only finds this user's workouts, so someone else's gets the same 'Workout not
-      // found' as a missing one, and the more specific message below reveals nothing.
+      // Locked so a set added at the same moment can't interleave with the removal.
       if (!(await lockWorkout(client, workoutId, user.id))) {
         return 'no workout';
       }
-      // Deleting the exercise's workout_exercises row deletes its sets too (the sets' foreign key
-      // to it is ON DELETE CASCADE), in one statement, so they go all together or not at all.
-      // No renumbering: the other exercises' set numbers and positions don't count this one.
+      // Deleting the exercise from the workout deletes its sets too (cascade).
+      // No renumbering needed: other exercises' set numbers don't depend on this one.
       const result = await client.query(
         'DELETE FROM workout_exercises WHERE workout_id = $1 AND exercise_id = $2',
         [workoutId, exerciseId]
@@ -60,8 +52,7 @@ workoutExercisesRouter.delete(
     }
     const workout = await loadWorkoutDetail(workoutId, user.id);
     if (!workout) {
-      // Only possible if the workout was deleted between the two queries.
-      return res.status(404).json({ error: 'Workout not found' });
+      return res.status(404).json({ error: 'Workout not found' }); // deleted in between
     }
     return res.json(workout);
   }
