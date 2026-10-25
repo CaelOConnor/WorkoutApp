@@ -14,10 +14,10 @@ afterAll(async () => {
   await pool.end();
 });
 
-// One set as [reps, weight, unit?]. A labeled tuple type: the labels only document the positions.
+// A labeled tuple type: the labels only document the positions.
 type SetSpec = [reps: number, weight: number, unit?: WeightUnit];
 
-// Logs one workout on `date` with the given sets of one exercise, numbered 1..n.
+// One workout on `date` with sets of a single exercise.
 async function logDay(userId: number, date: string, exerciseId: number, sets: SetSpec[]) {
   const workout = await createWorkoutOn(userId, date);
   // entries() gives [index, value] pairs, so the loop can number the sets.
@@ -38,7 +38,6 @@ describe('GET /exercises/:id/progress', () => {
     squatId = (await createExercise('Squat')).id;
   });
 
-  // Small wrapper so each test reads as "the progress for this query".
   function getProgress(exerciseId: number | string, query = '', userId = lifter.id) {
     return request(app)
       .get(`/exercises/${exerciseId}/progress${query}`)
@@ -95,7 +94,7 @@ describe('GET /exercises/:id/progress', () => {
   it("defaults to the unit of the exercise's most recent set with reps", async () => {
     await logDay(lifter.id, '2026-09-01', squatId, [[5, 100, 'lb']]);
     await logDay(lifter.id, '2026-09-02', squatId, [[5, 50, 'kg']]);
-    // Newer, but 0 reps (the app's 0 × 0 placeholder), so it doesn't decide the unit.
+    // Newer, but the app's empty placeholder set (0 reps), so it doesn't decide the unit.
     await logDay(lifter.id, '2026-09-03', squatId, [[0, 0, 'lb']]);
     // Another user's newer set doesn't either.
     await logDay(other.id, '2026-09-04', squatId, [[5, 100, 'lb']]);
@@ -113,7 +112,7 @@ describe('GET /exercises/:id/progress', () => {
   });
 
   it('ignores sets with 0 reps, and leaves out days that only have those', async () => {
-    // 0 × 300 is a failed attempt: it mustn't become the top set.
+    // A failed attempt at 300 must not become the top set.
     await logDay(lifter.id, '2026-09-01', squatId, [[5, 100], [0, 300]]);
     await logDay(lifter.id, '2026-09-02', squatId, [[0, 0]]);
 
@@ -185,6 +184,7 @@ describe('GET /exercises/:id/progress', () => {
     expect(res.body).toMatchObject({ exercise_name: 'My Lunge', points: [{ date: '2026-09-01' }] });
   });
 
+  // Another user's exercise gets the same 404 as a missing one, so it can't be detected.
   it("returns 404 for a missing exercise or another user's custom one", async () => {
     const theirs = await createExercise('Their Lunge', other.id);
 
@@ -247,8 +247,7 @@ describe('GET /exercises/logged', () => {
     await logDay(lifter.id, '2026-09-03', squat, [[3, 50, 'kg']]);
     // Only a 0-rep set: nothing to chart, so not listed.
     await logDay(lifter.id, '2026-09-04', curl, [[0, 0, 'lb']]);
-    // Another user's custom exercise, logged by them. (The lifter can't log it: the
-    // sets_exercise_visible trigger rejects that, see workouts.test.ts.)
+    // Logged by its owner; the sets_exercise_visible trigger stops the lifter logging it.
     await logDay(other.id, '2026-09-04', theirs, [[5, 20, 'lb']]);
     // Another user's newer Bench set changes neither Bench's date nor its unit.
     await logDay(other.id, '2026-09-05', bench, [[5, 100, 'lb']]);

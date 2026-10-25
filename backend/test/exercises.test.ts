@@ -108,8 +108,8 @@ describe('POST /exercises', () => {
     expect(res.body).toMatchObject({ name: 'Curl', muscle_group: null });
   });
 
-  // exercises.name is VARCHAR(100): Postgres counts characters, but JS's .length counts UTF-16
-  // code units, and an emoji like 💪 is two of them. 100 emoji fit the column; .length says 200.
+  // Postgres counts characters, but JS's .length counts UTF-16 code units, and an emoji is two
+  // of them. 100 emoji fit VARCHAR(100) even though .length says 200.
   it.each([
     ['100 letters', 'a'.repeat(100)],
     ['100 emoji', '💪'.repeat(100)],

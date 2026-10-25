@@ -3,12 +3,8 @@ import { Client } from 'pg';
 import { runner } from 'node-pg-migrate';
 import { TEST_DATABASE_URL } from '../test-env';
 
-// Shared setup for migration tests. A data migration has to be tested against data written before
-// it ran, which the normal test database never has: global-setup runs every migration on empty
-// tables. So each migration test builds its own copy of the schema in a scratch Postgres schema (a
-// namespace for tables inside the same database), runs migrations only up to the one before the
-// migration under test, inserts old-style rows, then runs that migration and checks the result.
-// The app's tables in `public` are never touched.
+// A data migration needs rows written before it ran, and global-setup's tables start empty. So each
+// test migrates a scratch schema to just before it, inserts old-style rows, then runs it. `public` is untouched.
 
 export const SCHEMA = 'migration_test';
 
@@ -49,7 +45,7 @@ export async function dropScratchSchema(client: Client): Promise<void> {
   await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
 }
 
-// Runs an INSERT and returns the new row's id.
+// Adds RETURNING id itself, so callers pass the INSERT without it.
 export async function insertRow(client: Client, sql: string, params: unknown[]): Promise<number> {
   const result = await client.query<{ id: number }>(`${sql} RETURNING id`, params);
   const id = result.rows[0]?.id;

@@ -9,10 +9,9 @@ afterAll(async () => {
   await pool.end();
 });
 
-// One set as [exercise id, reps, weight, unit?].
 type SetSpec = [exerciseId: number, reps: number, weight: number, unit?: WeightUnit];
 
-// Logs one workout on `date` with the given sets, numbering each exercise's sets 1..n in order.
+// Numbers each exercise's sets from 1, like the routes do.
 async function logWorkout(userId: number, date: string, sets: SetSpec[]): Promise<number> {
   const workout = await createWorkoutOn(userId, date);
   const counts = new Map<number, number>();
@@ -118,7 +117,7 @@ describe('GET /exercises/last-sets', () => {
       [squat, 0, 205], // a failed attempt
       [squat, 5, 185],
     ]);
-    // Newer, but only the app's 0 × 0 placeholder: not a real "last time".
+    // Newer, but only the app's empty placeholder set (0 reps, 0 weight), so not a real last time.
     await logWorkout(lifter.id, '2026-10-08', [[squat, 0, 0]]);
 
     const res = await getLastSets(`ids=${squat}`);
@@ -157,7 +156,7 @@ describe('GET /exercises/last-sets', () => {
 
     const res = await getLastSets(`ids=${squat},${theirs}`);
 
-    // Their custom exercise comes back the same as one never logged: no name, no sets.
+    // Their custom exercise looks the same as one never logged, so it can't be detected.
     expect(res.body).toEqual([
       { exercise_id: squat, date: '2026-10-01', sets: [{ reps: 5, weight: 185, unit: 'lb' }] },
     ]);

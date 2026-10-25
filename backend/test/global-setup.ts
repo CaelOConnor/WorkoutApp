@@ -3,11 +3,10 @@ import { Client } from 'pg';
 import { runner } from 'node-pg-migrate';
 import { TEST_DATABASE_URL } from './test-env';
 
-// Vitest runs this once, in the main process, before any test file.
-// It wipes the test database and replays every migration, so tests run against the same
-// migration history as dev and production, and a migration that can't build from scratch fails here.
+// Runs once before any test file. Rebuilding from every migration means a migration that
+// can't build from scratch fails here, not in production.
 export default async function globalSetup(): Promise<void> {
-  // Guard: this drops every table, so refuse anything that isn't clearly a test database.
+  // This drops every table, so refuse anything that isn't clearly a test database.
   if (!new URL(TEST_DATABASE_URL).pathname.endsWith('_test')) {
     throw new Error(`Refusing to reset a non-test database: ${TEST_DATABASE_URL}`);
   }

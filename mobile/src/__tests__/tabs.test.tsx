@@ -1,6 +1,5 @@
-// Integration tests for the tab bar (src/app/(tabs)/_layout.tsx): the real app from src/app/,
-// signed in, with a fake backend. Each tab's own screen has its own test file; these only check
-// switching between them, and that other screens still open over the tabs.
+// The tab bar (src/app/(tabs)/_layout.tsx), in the real app with a fake backend. Each tab's screen
+// has its own file; these only check switching, and that other screens still open over the tabs.
 import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import * as SecureStore from 'expo-secure-store';
@@ -46,7 +45,7 @@ it('starts on History, with a tab for each area', async () => {
   expect(tab('History')).toBeOnTheScreen();
   expect(tab('Progress')).toBeOnTheScreen();
   expect(tab('Templates')).toBeOnTheScreen();
-  // The history's header keeps "+ Log workout"; Progress moved from the header to the tab bar.
+  // Log workout stays in the header, but Progress is only a tab, not a header button too.
   expect(screen.getByRole('button', { name: 'Log workout' })).toBeOnTheScreen();
   expect(screen.queryByRole('button', { name: 'Progress' })).not.toBeOnTheScreen();
 });

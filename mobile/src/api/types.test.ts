@@ -26,9 +26,8 @@ import {
   isWorkoutDetailList,
 } from './types';
 
-// Valid examples of each response. `satisfies` checks the object against the shared type
-// (so a field renamed in models.ts breaks this file at compile time) without widening it,
-// so `{ ...validSet, reps: -1 }` below still knows every key.
+// `satisfies` checks each example against the shared type (a rename in models.ts fails to compile)
+// without widening it, so spreads like `{ ...validSet, reps: -1 }` still know every key.
 const validLogin = { token: 'abc.def.ghi', email: 'a@example.com' } satisfies LoginResponse;
 const validUser = { id: 1, email: 'a@example.com' } satisfies PublicUser;
 const validExercise = {
@@ -124,7 +123,7 @@ describe('isWorkoutDetail', () => {
     ['missing sets', { ...validWorkout, sets: undefined }],
     ['undefined notes (must be string or null)', { ...validWorkout, notes: undefined }],
     ['a set with negative reps', { ...validWorkout, sets: [{ ...validSet, reps: -1 }] }],
-    // The old string form: an app built against the new server should fail loudly on an old one.
+    // An older server's string format must fail loudly, not be shown as text.
     ['a set with a string weight', { ...validWorkout, sets: [{ ...validSet, weight: '135.00' }] }],
     ['a set with a negative weight', { ...validWorkout, sets: [{ ...validSet, weight: -5 }] }],
     // typeof NaN is 'number', so a typeof check alone would let these through.
@@ -296,7 +295,7 @@ describe('isExerciseLastSetsList', () => {
   it.each([
     ['a single item (not a list)', validLastSets],
     ['a timestamp date', [{ ...validLastSets, date: '2026-10-08T00:00:00Z' }]],
-    // Only sets with 1+ reps are sent, and an exercise without any is left out.
+    // Only sets with at least one rep are sent, and an exercise without any is left out.
     ['no sets', [{ ...validLastSets, sets: [] }]],
     ['a set with 0 reps', [{ ...validLastSets, sets: [{ ...set, reps: 0 }] }]],
     ['a set with a string weight', [{ ...validLastSets, sets: [{ ...set, weight: '225' }] }]],

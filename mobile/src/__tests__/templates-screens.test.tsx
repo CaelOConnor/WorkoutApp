@@ -1,6 +1,5 @@
-// Integration tests for the template screens: the Templates tab, a template's detail, and the
-// shared form behind "+ New template" and Edit. The real app from src/app/, signed in, with a fake
-// backend.
+// The Templates tab, a template's detail, and the shared new and edit form, in the real app with a
+// fake backend.
 import type {
   CreateExerciseBody,
   Exercise,
@@ -53,7 +52,7 @@ const PUSH_DAY: TemplateDetail = {
 // The id POST /templates gives the first new template.
 const NEW_ID = 10;
 
-// `count` sets of one exercise, numbered 1..count like the server's.
+// Numbered from 1, like the server's.
 function setsOf(exercise: Exercise, count: number, firstId: number): WorkoutDetailSet[] {
   return Array.from({ length: count }, (_, i) => ({
     id: firstId + i,
@@ -79,11 +78,8 @@ const WORKOUT: WorkoutDetail = {
   ],
 };
 
-// A backend with the templates routes, behaving like the real ones: the list sorted by name
-// ignoring case, 409 for a name already used (ignoring case, except the template's own), 404 for
-// a template that isn't there. `holdWrites()` keeps POST and PUT unanswered until the function
-// it returns is called.
-// `workouts`: the history, each also served as GET /workouts/:id.
+// Like the real routes: sorted by name ignoring case, 409 for a used name, 404 for a missing template.
+// holdWrites() keeps POST and PUT unanswered until the returned function is called.
 function fakeServer(initial: TemplateDetail[] = [LEG_DAY, PUSH_DAY], workouts: WorkoutDetail[] = []) {
   const templates = [...initial];
   const exercises = [...EXERCISES];
@@ -228,7 +224,6 @@ function rowNames() {
     .map((row) => String(row.props.accessibilityLabel));
 }
 
-// Opens a template's detail from the list.
 async function openTemplate(app: { getPathname: () => string }, name: string, id: number) {
   await fireEvent.press(await templateRow(name));
   await waitFor(() => expect(app.getPathname()).toBe(`/templates/${id}`));
@@ -252,7 +247,6 @@ function formOrder() {
   return screen.getAllByTestId(/ card$/).map((card) => String(card.props.testID).replace(/ card$/, ''));
 }
 
-// Opens the picker from the form and picks `name`.
 async function addExercise(name: string) {
   await fireEvent.press(screen.getByRole('button', { name: 'Add exercise' }));
   await fireEvent.press(await screen.findByRole('button', { name }));

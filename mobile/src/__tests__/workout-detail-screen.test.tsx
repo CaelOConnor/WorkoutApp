@@ -52,10 +52,8 @@ function initialWorkout(): WorkoutDetail {
   };
 }
 
-// A tiny in-memory backend for workout 3: writes change `state.workout`, and every GET returns
-// the current state, so the screen's refetch after a change shows what the server now holds.
-// `state.workout` is null once the workout is deleted. Every request body is recorded.
-// `lastSets`: last time's sets per exercise id, for GET /exercises/last-sets (none by default).
+// Writes change `state.workout` (null once deleted) and every GET returns it, so the screen's
+// refetch shows what the server now holds.
 function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
   const state: { workout: WorkoutDetail | null; bodies: unknown[] } = {
     workout: initialWorkout(),
@@ -114,8 +112,7 @@ function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
     }),
     'PATCH /workouts/3': write(({ body }) => {
       state.bodies.push(body);
-      // `as` (a type assertion, not a check): the fake trusts the app's bodies, and the tests
-      // check them exactly through state.bodies. The real server validates them.
+      // `as` is an assertion, not a check: the fake trusts the app, and tests check state.bodies.
       const { date, notes } = body as UpdateWorkoutBody;
       return save((w) => ({ ...w, date: date ?? w.date, notes: notes === undefined ? w.notes : notes }));
     }),
@@ -179,9 +176,8 @@ function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
   return { state, fetchMock, holdWrites };
 }
 
-// Alert.alert shows a native dialog, which doesn't exist in tests. This replaces it with one that
-// "presses" the first of its buttons whose text is in `answers`, like a user picking that option.
-// Returns the spy, to check which dialogs were shown.
+// Alert.alert's native dialog doesn't exist in tests, so this presses the first button whose text
+// is in `answers`, like a user would.
 function answerAlerts(...answers: string[]) {
   return jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
     buttons?.find((b) => b.text !== undefined && answers.includes(b.text))?.onPress?.();
@@ -197,11 +193,8 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// Starts the app on the history, like a launch, then opens `url` the way a tap would.
-// (Rendering straight at a deep link doesn't work: while the saved token is read, the signed-in
-// screens are guarded off and the router redirects away, then lands on '/' once signed in. See
-// ROADMAP.md.) See auth-screens.test.tsx for why the Promise is awaited separately.
-// Href is expo-router's type for a valid app path (typed routes), so a typo is a compile error.
+// Opens `url` from the history like a tap: rendering straight at a deep link redirects away while
+// the saved token is read (see ROADMAP.md). Href makes a typo in `url` a compile error.
 async function renderApp(url: Href) {
   const rendered = renderRouter('./src/app', { initialUrl: '/' });
   await rendered;
@@ -479,11 +472,8 @@ describe('double-tapping', () => {
 });
 
 describe('+ Add exercise', () => {
-  // The picker is a Modal. On iOS (Jest's platform) the screen waits for the Modal's onDismiss,
-  // which native code calls once the slide-away animation has finished, before it opens the next
-  // sheet: iOS can't present a screen while another is still being dismissed. Jest has no native
-  // side, and its Modal mock renders nothing once hidden, so this grabs the open picker first and
-  // then, after `close` has hidden it, calls its onDismiss itself, as native code would.
+  // On iOS the screen waits for the picker Modal's onDismiss before opening the next sheet, and Jest
+  // has no native side to call it. So this grabs the open picker, runs `close`, then calls onDismiss itself.
   async function closePicker(close: () => Promise<void>) {
     const picker = screen.getByTestId('exercise-picker');
     await close();

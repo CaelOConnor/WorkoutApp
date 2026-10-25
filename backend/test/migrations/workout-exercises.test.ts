@@ -90,7 +90,7 @@ describe(`migration ${MIGRATION}`, () => {
     });
 
     it('rejects a set whose exercise is not one of the workout exercises', async () => {
-      // 23503 = foreign_key_violation: (workout_id, exercise_id) must be a workout_exercises row.
+      // 23503 is foreign_key_violation: (workout_id, exercise_id) must be a workout_exercises row.
       await expect(insertSets(workoutId, [[exerciseIds.bench, 1]])).rejects.toMatchObject({
         code: '23503',
         constraint: 'sets_workout_exercise_fkey',

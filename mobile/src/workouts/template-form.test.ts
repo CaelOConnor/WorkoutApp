@@ -80,7 +80,7 @@ describe('templateFormFrom', () => {
 });
 
 describe('templateFromWorkout', () => {
-  // `count` sets of one exercise, numbered 1..count like the server's.
+  // Numbered from 1, like the server's.
   function sets(exerciseId: number, name: string, count: number): WorkoutDetailSet[] {
     return Array.from({ length: count }, (_, i) => ({
       id: exerciseId * 100 + i,
@@ -215,7 +215,7 @@ describe('templateFormReducer', () => {
     const form = apply(createTemplateForm(), { type: 'addExercise', exercise: SQUAT });
     const key = keyAt(form, 0);
 
-    // `times` taps of − (by: -1) or + (by: 1) on the stepper.
+    // `times` taps of the stepper's minus (by: -1) or plus (by: 1) button.
     const taps = (by: number, times: number) =>
       Array.from({ length: times }, (): TemplateAction => ({ type: 'changeSetCount', exerciseKey: key, by }));
 
@@ -309,7 +309,7 @@ describe('validateTemplateForm', () => {
   });
 
   it('counts the name in characters as the server does, so 100 emoji fit', () => {
-    // Each 💪 is one character but two UTF-16 units: its .length is 2.
+    // Each emoji is one character but two UTF-16 units, so its .length is 2.
     const result = validateTemplateForm(apply(withThree(), { type: 'setName', name: '💪'.repeat(100) }));
 
     expect(result.nameError).toBeNull();

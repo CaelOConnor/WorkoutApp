@@ -63,9 +63,8 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
   );
 }
 
-// Runs a state-changing call that should reject inside act(), and returns its error.
-// The error is caught inside the act() callback: when that callback itself rejects, act()
-// doesn't pass the original error on.
+// Catches inside the act() callback, because act() doesn't pass on the original error when its
+// callback rejects.
 async function caughtInAct(run: () => Promise<unknown>): Promise<unknown> {
   let error: unknown;
   await act(async () => {

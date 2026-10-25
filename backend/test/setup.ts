@@ -1,10 +1,8 @@
 import { TEST_DATABASE_URL, TEST_JWT_SECRET } from './test-env';
 
-// Runs in each test worker before the test file's imports, so these are in place when
-// app.ts and db/pool.ts read process.env.
+// Runs in each test worker before the test file's imports, so app.ts and pool.ts see these values.
 
-// app.ts throws at import time if JWT_SECRET is missing, so give tests a fixed one.
+// app.ts throws at import time if JWT_SECRET is missing.
 process.env.JWT_SECRET = TEST_JWT_SECRET;
-// pool.ts loads backend/.env via dotenv, but dotenv never overwrites a variable that is
-// already set, so this keeps tests off the dev database.
+// dotenv never overwrites a variable that is already set, so backend/.env can't point tests at the dev database.
 process.env.DATABASE_URL = TEST_DATABASE_URL;

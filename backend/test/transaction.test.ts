@@ -41,7 +41,7 @@ describe('withTransaction', () => {
       throw failure;
     });
 
-    // toBe on the rejection: the very same error object, not a copy or a wrapper.
+    // toBe, so it must be the very same error object, not a wrapped copy.
     await expect(run).rejects.toBe(failure);
     expect(await emails()).toEqual(['existing@example.com']);
   });
@@ -49,7 +49,7 @@ describe('withTransaction', () => {
   it('rolls back when a statement fails in Postgres, and rethrows its error', async () => {
     const run = withTransaction(async (client) => {
       await insertUser(client, 'a@example.com');
-      await insertUser(client, 'existing@example.com'); // users.email is UNIQUE
+      await insertUser(client, 'existing@example.com'); // users.email is UNIQUE, so Postgres fails with code 23505
     });
 
     await expect(run).rejects.toMatchObject({ code: '23505' });

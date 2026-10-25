@@ -47,11 +47,8 @@ afterEach(() => {
 // Renders `hook` inside the app's providers, once signed in (as the app only shows these screens
 // then). result.current is undefined until that first render.
 async function setup<T>(hook: () => T) {
-  // retry: false, so a failing request fails the test straight away instead of retrying.
-  // gcTime: Infinity, because when a test ends its hooks unmount, and each now-unused query and
-  // mutation would start a 5-minute timer to drop itself from the cache. Pending timers keep Jest
-  // from exiting (the mutation tests hung after passing); with Infinity no timer is started.
-  // Each test gets a new client anyway, so nothing needs dropping.
+  // retry: false so a failing request fails the test at once. gcTime: Infinity so unmounted queries
+  // don't start 5-minute cleanup timers, which would keep Jest from exiting.
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: Infinity },

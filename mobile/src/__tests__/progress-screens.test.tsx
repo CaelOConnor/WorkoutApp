@@ -1,6 +1,5 @@
-// Integration tests for the progress screens (/progress and /progress/[exerciseId]): the real app
-// from src/app/, signed in, with a fake backend. The chart itself (Skia) can't render in Jest, so
-// jest.setup.ts swaps it for a placeholder; these tests check the list of points shown under it.
+// The progress screens, in the real app with a fake backend. The chart is a placeholder in Jest
+// (see jest.setup.tsx), so these check the list of points shown under it.
 import type { ExerciseProgress, LoggedExercise, WorkoutDetail } from '@shared/models';
 import { router, type Href } from 'expo-router';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
@@ -225,7 +224,7 @@ it("opens from a workout's exercise card menu", async () => {
     'GET /workouts/5': () => jsonResponse(200, workout),
     'GET /exercises/1/progress?from=2026-04-14': () => jsonResponse(200, SQUAT_LB),
   });
-  // Presses "View progress" in the card's menu.
+  // A native Alert can't be tapped in Jest, so the mock presses View progress itself.
   jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons?: AlertButton[]) => {
     buttons?.find((b) => b.text === 'View progress')?.onPress?.();
   });

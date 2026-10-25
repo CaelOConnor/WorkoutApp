@@ -1,6 +1,5 @@
-// Integration tests for starting a workout from a template: "Start workout" on a template, and
-// the chooser behind History's "+ Log workout". The real app from src/app/, signed in, with a
-// fake backend.
+// Starting a workout from a template, via a template's Start workout or the Log workout chooser,
+// in the real app with a fake backend.
 import type {
   CreateWorkoutBody,
   Exercise,
@@ -61,9 +60,8 @@ const LAST_SETS: ExerciseLastSets[] = [
   },
 ];
 
-// A backend with one template and a history that gets the saved workout (id 7).
-// `holdLastSets()` keeps GET /exercises/last-sets unanswered until the function it returns is
-// called, to see the screen before the hints arrive.
+// One template, and a history that gets the saved workout (id 7). holdLastSets() delays last
+// time's sets until called, to see the screen before the hints arrive.
 function fakeServer() {
   const saved: CreateWorkoutBody[] = [];
   let gate: Promise<void> | null = null;
@@ -139,7 +137,7 @@ async function renderApp() {
   return { getPathname: () => rendered.getPathname() };
 }
 
-// Templates tab -> Leg day -> Start workout.
+// Opens Leg day from the Templates tab and taps Start workout.
 async function startFromTemplateScreen(app: { getPathname: () => string }) {
   await fireEvent.press(screen.getByRole('button', { name: /^Templates, tab, \d+ of \d+$/ }));
   await fireEvent.press(await screen.findByRole('button', { name: /^Leg day · / }));
@@ -184,7 +182,7 @@ it('starts a workout from a template, saving only the ticked sets, hints filling
   expect(reps('Squat', 1)).toHaveDisplayValue('');
   expect(check('Squat', 1)).not.toBeChecked();
 
-  // ✓ on an untouched row: saved with last time's numbers.
+  // Ticking an untouched row saves it with last time's numbers.
   await fireEvent.press(check('Squat', 1));
   expect(check('Squat', 1)).toBeChecked();
   // Typing ticks the row; the weight left blank comes from the hint.

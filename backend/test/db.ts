@@ -2,16 +2,15 @@ import bcrypt from 'bcrypt';
 import pool from '../src/db/pool';
 import type { Exercise, PublicUser, WeightUnit, Workout, WorkoutSet } from '../src/types/models';
 
-// Empties every table and resets SERIAL ids to 1, so each test starts from a known state.
+// Also resets SERIAL ids to 1, so tests can rely on known ids.
 export async function resetDb(): Promise<void> {
   await pool.query(
     'TRUNCATE users, exercises, workouts, workout_exercises, sets, templates, template_exercises RESTART IDENTITY CASCADE'
   );
 }
 
-// A set's exercise must be one of its workout's exercises (sets_workout_exercise_fkey), so the
-// helpers that insert sets directly add the workout_exercises row first, after the workout's other
-// exercises, like the routes do. ON CONFLICT DO NOTHING: already in the workout, nothing to add.
+// A set's exercise must already be in its workout (sets_workout_exercise_fkey), so helpers that
+// insert sets add it first, at the end like the routes do. Does nothing if it's already there.
 async function addWorkoutExercise(workoutId: number, exerciseId: number): Promise<void> {
   await pool.query(
     `INSERT INTO workout_exercises (workout_id, exercise_id, position)
@@ -35,8 +34,7 @@ export async function createUser(email: string, password: string): Promise<Publi
   return user;
 }
 
-// Inserts an exercise so sets have a real exercise_id to point at (sets.exercise_id is a foreign key).
-// Built-in (created_by NULL) unless createdBy names the user whose custom exercise it is.
+// Built-in (created_by NULL) unless createdBy names the user who owns it.
 export async function createExercise(
   name: string,
   createdBy: number | null = null
@@ -52,8 +50,7 @@ export async function createExercise(
   return exercise;
 }
 
-// Inserts a workout with one set for the given user, so tests have a typical workout to read,
-// edit, and delete without adding sets by hand.
+// Comes with one set (5 reps at 100), so tests have a typical workout without adding sets by hand.
 export async function createWorkout(
   userId: number,
   exerciseId: number,
@@ -88,8 +85,7 @@ export async function createWorkoutOn(userId: number, date: string): Promise<Pic
   return workout;
 }
 
-// Adds one more set to an existing workout, for tests that need several sets.
-// A default parameter value (unit = 'lb') makes the argument optional for callers.
+// The default value (unit = 'lb') makes that argument optional for callers.
 export async function addSet(
   workoutId: number,
   exerciseId: number,

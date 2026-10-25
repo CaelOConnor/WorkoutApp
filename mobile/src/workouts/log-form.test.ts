@@ -40,14 +40,14 @@ function withSquat(reps = '5', weight = '225'): LogForm {
   return apply(form, { type: 'updateSet', exerciseKey: key, setKey, change: { reps, weight } });
 }
 
-// The set at [exercise, set] of a form.
+// `exercise` and `set` are positions in the form, here and in the helpers below.
 function setAt(form: LogForm, exercise: number, set: number): LogSet {
   const found = form.exercises[exercise]?.sets[set];
   if (!found) throw new Error(`No set ${exercise}/${set}`);
   return found;
 }
 
-// Taps the ✓ of the set at [exercise, set].
+// Like tapping the set's checkmark on screen.
 function tick(form: LogForm, exercise: number, set: number): LogForm {
   return apply(form, {
     type: 'toggleSet',
@@ -56,7 +56,6 @@ function tick(form: LogForm, exercise: number, set: number): LogForm {
   });
 }
 
-// Types into the set at [exercise, set].
 function typeInto(
   form: LogForm,
   exercise: number,
@@ -490,9 +489,8 @@ describe('hasChanges', () => {
 });
 
 describe('validateLogForm', () => {
-  // No set_number in the body: the server numbers each exercise's sets in the order they're sent
-  // (and rejects a body that has one), so form order is all that matters. toEqual fails on any
-  // extra key, so a set_number left in would fail this test.
+  // The server numbers sets in the order sent and rejects a set_number, so form order is all that
+  // matters. toEqual fails on any extra key, so a leftover set_number would show.
   it('builds the POST body with the sets in form order, without set numbers', () => {
     let form = withSquat('5', '225');
     const squatKey = exerciseKey(form, 0);

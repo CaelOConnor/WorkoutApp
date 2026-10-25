@@ -58,8 +58,7 @@ describe('groupSetsByExercise', () => {
 
 describe('formatSetLine', () => {
   it('numbers by position, not the stored set_number', () => {
-    // A stored number that disagrees with the position. The server keeps the two equal now, but
-    // the line is built from the position the screen has, so it can't show a stale number.
+    // A stale set_number: the line uses the position on screen, so it can't show a wrong number.
     const line = formatSetLine(set({ set_number: 7, reps: 5, weight: 225, unit: 'lb' }), 0);
 
     expect(line).toBe('Set 1 · 5 reps × 225 lb');

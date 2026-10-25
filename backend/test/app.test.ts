@@ -5,8 +5,7 @@ import app from '../src/app';
 import { authHeader } from './tokens';
 import { TEST_JWT_SECRET } from './test-env';
 
-// supertest's request(app) starts the app on a temporary port, sends one request, and closes it.
-// Each `it` is one behavior; `describe` just groups them in the output.
+// supertest's request(app) runs the app on a temporary port for one request, so no server needs to be up.
 
 describe('GET /', () => {
   it('responds 200 with the health message', async () => {
@@ -18,8 +17,7 @@ describe('GET /', () => {
 });
 
 describe('POST /workouts', () => {
-  // A valid body, so the only thing wrong with the request is the missing token.
-  // Otherwise a 400 from validation could hide whether auth ran at all.
+  // A valid body, so a 400 from validation can't hide whether auth ran.
   it('returns 401 with { error } when no token is sent', async () => {
     const res = await request(app)
       .post('/workouts')
@@ -31,7 +29,7 @@ describe('POST /workouts', () => {
 
   it.each([
     ['a malformed token', 'Bearer not-a-jwt'],
-    // Correctly formed, but signed with a key the server doesn't know: a forged token.
+    // Well formed but signed with another key, like a forged token.
     ['a token signed with the wrong secret', `Bearer ${jwt.sign({ userId: 1 }, 'not-the-secret')}`],
     // `exp` is seconds since the epoch; one minute ago means already expired.
     [
@@ -59,8 +57,7 @@ describe('POST /workouts', () => {
     const res = await request(app).post('/workouts').set('Authorization', authHeader(1)).send(body);
 
     expect(res.status).toBe(400);
-    // toEqual compares structure, and expect.any(String) matches any string,
-    // so the test pins the response shape without depending on the exact message.
+    // expect.any(String) pins the shape without depending on the exact message.
     expect(res.body).toEqual({ error: expect.any(String) });
   });
 });

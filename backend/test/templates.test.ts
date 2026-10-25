@@ -27,7 +27,7 @@ function post(body: object, userId = lifter.id) {
   return request(app).post('/templates').set('Authorization', authHeader(userId)).send(body);
 }
 
-// Creates a template through the API and returns it, for tests about reading templates.
+// Through the API, so the template is stored exactly as the routes store it.
 async function createTemplate(body: TemplateBody, userId = lifter.id): Promise<TemplateDetail> {
   const res = await post(body, userId);
   expect(res.status).toBe(201);
@@ -94,6 +94,7 @@ describe('POST /templates', () => {
     expect(await templateCount()).toBe(0);
   });
 
+  // Another user's custom exercise looks the same as a missing one, so its name stays private.
   it("returns the same 400 for another user's custom exercise, without its name", async () => {
     const theirs = (await createExercise('Their Lunge', other.id)).id;
 
@@ -105,14 +106,13 @@ describe('POST /templates', () => {
   });
 
   it('accepts a name of 100 characters counted as Postgres does, so 100 emoji fit', async () => {
-    // Each 💪 is one code point but two UTF-16 units, so its .length in JS is 200.
+    // Each emoji is one character to Postgres but two UTF-16 units, so .length in JS is 200.
     const res = await post({ name: '💪'.repeat(100), exercises: [{ exercise_id: squat, set_count: 1 }] });
 
     expect(res.status).toBe(201);
   });
 
-  // it.each with an array of [label, name] tuples: each row becomes its own test, and %s puts
-  // the label in the test's name.
+  // Each row becomes its own test, and %s puts the row's label in the test name.
   it.each([
     ['missing', undefined],
     ['not a string', 42],
@@ -408,6 +408,7 @@ describe('PUT /templates/:id', () => {
     expect(await current(legs.id)).toEqual(legs);
   });
 
+  // Other users can't edit a template, or tell it exists.
   it("returns 404 for another user's template or a missing one, and changes nothing", async () => {
     const body = { name: 'Mine now', exercises: [{ exercise_id: squat, set_count: 1 }] };
 
@@ -428,10 +429,8 @@ describe('PUT /templates/:id', () => {
   });
 
   it('applies edits sent at once one after another, so each succeeds and one wins whole', async () => {
-    // Each edit deletes the template's rows and inserts new ones. Without a lock, an edit that
-    // waits on another's DELETE doesn't see the rows that edit then inserts, so its own INSERT
-    // collides with them (a 500). The lock makes each edit wait for the previous one to commit.
-    // Like the set-numbering tests, a race can pass by luck; this guards the lock, not proves it.
+    // Without the lock, an edit waiting on another's DELETE then collides with that edit's INSERT (a 500).
+    // A race can pass by luck, so this guards the lock rather than proves it.
     const bodies = [1, 2, 3, 4, 5].map((setCount) => ({
       name: 'Leg day',
       exercises: [
@@ -443,8 +442,7 @@ describe('PUT /templates/:id', () => {
     const results = await Promise.all(bodies.map((body) => put(legs.id, body)));
 
     expect(results.map((res) => res.status)).toEqual([200, 200, 200, 200, 200]);
-    // Whichever edit committed last, the template is entirely that edit: both exercises have the
-    // same set count, never a mix of two edits.
+    // Whichever edit won, the template is all that edit, never a mix of two.
     const final = await current(legs.id);
     expect(final.exercises).toHaveLength(2);
     expect(final.exercises[0]?.set_count).toBe(final.exercises[1]?.set_count);
@@ -484,6 +482,7 @@ describe('DELETE /templates/:id', () => {
     expect(res.status).toBe(201);
   });
 
+  // Other users can't delete a template, or tell it exists.
   it("returns 404 for another user's template or a missing one, and deletes nothing", async () => {
     const theirs = await del(legs.id, other.id);
     const missing = await del(99999);

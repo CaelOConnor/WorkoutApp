@@ -49,7 +49,7 @@ describe('requestLogger', () => {
     const lines: string[] = [];
     const app = appWith(lines, [0, 50]);
 
-    // timeout(): supertest aborts the request after 20 ms, like the app's 10 s timeout would.
+    // supertest gives up after 20 ms, like the mobile app does after 10 s.
     await request(app).get('/hang').timeout(20).catch(() => {});
 
     // The server notices the closed connection a moment later; vi.waitFor retries until then.

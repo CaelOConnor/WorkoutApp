@@ -31,15 +31,8 @@ const EXERCISES: Exercise[] = [
   { id: 3, name: 'Deadlift', muscle_group: 'Back', created_by: null },
 ];
 
-// A backend that saves one new workout (id 7) and then serves it in the history and as detail.
-// `holdSave()` keeps both POSTs (workouts and exercises) unanswered until the returned function
-// is called.
-// `exercises` is the server's list: POST /exercises adds to it (ids from 100), with the real
-// route's 409 for a name already in it, ignoring case. A test can also push to it directly, as if
-// the exercise was created on another phone after the app loaded its list.
-// `lastSets`: last time's sets per exercise id, for GET /exercises/last-sets (none by default:
-// every exercise is never logged). `holdLastSets()` keeps that request unanswered until the
-// returned function is called.
+// Saves one workout (id 7). Tests can push to `exercises` as if one was created on another phone.
+// holdSave() and holdLastSets() keep those requests unanswered until the returned function is called.
 function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
   const saved: CreateWorkoutBody[] = [];
   const exercises: Exercise[] = [...EXERCISES];
@@ -58,8 +51,7 @@ function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
         id: 70 + i,
         exercise_id: s.exercise_id,
         exercise_name: exercises.find((e) => e.id === s.exercise_id)?.name ?? '?',
-        // Like the real server: each exercise's sets are 1, 2, 3... in the order they were sent,
-        // i.e. how many sets of this exercise there are up to and including this one.
+        // Like the real server: each exercise's sets are numbered from 1, in the order sent.
         set_number: body.sets.slice(0, i + 1).filter((t) => t.exercise_id === s.exercise_id).length,
         reps: s.reps,
         weight: s.weight,
@@ -73,7 +65,7 @@ function fakeServer(lastSets: Record<number, ExerciseLastSets['sets']> = {}) {
       const w = workout();
       return jsonResponse(200, w ? [w] : []);
     },
-    // The chooser behind "+ Log workout" lists them.
+    // The chooser behind Log workout lists them.
     'GET /templates': () => jsonResponse(200, []),
     'GET /exercises': () => jsonResponse(200, exercises),
     // Like the real route: in the order asked, leaving out exercises never logged.
@@ -149,9 +141,8 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// Starts on the history and opens an empty log screen with its header button and the chooser
-// sheet, like a user. (Starting from a template: start-from-template.test.tsx.)
-// See auth-screens.test.tsx for why the Promise is awaited separately.
+// Opens the log screen the way a user does, from the history. See auth-screens.test.tsx for why
+// the Promise is awaited separately.
 async function openLogScreen() {
   const rendered = renderRouter('./src/app', { initialUrl: '/' });
   await rendered;
@@ -188,7 +179,7 @@ it('logs a workout end to end and opens it, with back going to the updated histo
   await fireEvent.press(screen.getByRole('button', { name: 'Squat' }));
 
   await fillSet('Squat', 1, '5', '225');
-  // + Add set copies the previous set; then the copy's reps are changed.
+  // Add set copies the previous set; then the copy's reps are changed.
   await fireEvent.press(screen.getByRole('button', { name: 'Add Squat set' }));
   expect(screen.getByLabelText('Squat set 2 weight')).toHaveDisplayValue('225');
   await fireEvent.changeText(screen.getByLabelText('Squat set 2 reps'), '3');
@@ -313,7 +304,7 @@ describe("last time's sets as hints", () => {
     expect(screen.queryByLabelText('Loading last time for Squat')).not.toBeOnTheScreen();
     expect(screen.getByRole('checkbox', { name: 'Squat set 1 done' })).not.toBeChecked();
 
-    // ✓ keeps last time's numbers; typing replaces the hint for that field only.
+    // Ticking keeps last time's numbers; typing replaces the hint for that field only.
     await fireEvent.press(screen.getByRole('checkbox', { name: 'Squat set 1 done' }));
     await fireEvent.changeText(screen.getByLabelText('Squat set 3 reps'), '4');
     await fireEvent.press(screen.getByRole('button', { name: 'Save workout' }));

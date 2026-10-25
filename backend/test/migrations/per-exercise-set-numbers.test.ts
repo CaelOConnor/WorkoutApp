@@ -51,7 +51,6 @@ afterAll(async () => {
   await client.end();
 });
 
-// A fresh scratch schema for each test, migrated to just before this migration.
 beforeEach(async () => {
   await resetScratchSchema(client, BEFORE_MIGRATION);
 
@@ -90,8 +89,8 @@ describe(`migration ${MIGRATION}`, () => {
   });
 
   it('keeps the order by set_number when it differs from the order sets were added', async () => {
-    // Possible before: PATCH could change any set's set_number. The set added second (number 2)
-    // was shown first, and stays first.
+    // Old rows can look like this because PATCH could change set_number. The set numbered 2 was
+    // shown first, so it stays first.
     await insertSets(await createWorkout(), [[exerciseIds.squat, 5], [exerciseIds.squat, 2], [exerciseIds.squat, 9]]);
 
     await migrate({ direction: 'up', file: MIGRATION });
@@ -123,7 +122,7 @@ describe(`migration ${MIGRATION}`, () => {
     await insertSets(workoutId, [[exerciseIds.squat, 1]]);
     await migrate({ direction: 'up', file: MIGRATION });
 
-    // 23505 = unique_violation. The same number for another exercise is still fine.
+    // 23505 is unique_violation. The same number for another exercise is still fine.
     await insertSets(workoutId, [[exerciseIds.bench, 1]]);
     await expect(insertSets(workoutId, [[exerciseIds.squat, 1]])).rejects.toMatchObject({
       code: '23505',
@@ -132,9 +131,8 @@ describe(`migration ${MIGRATION}`, () => {
   });
 
   it('checks uniqueness at the end of a statement, so one UPDATE can shift numbers past each other', async () => {
-    // Renumbering after a delete shifts sets by one. A plain unique constraint is checked after
-    // each row, so moving 1 to 2 would clash with the 2 that hasn't moved yet. A DEFERRABLE one is
-    // checked once the whole statement is done, when the numbers are unique again.
+    // A plain unique constraint is checked after each row, so moving 1 to 2 would clash with the 2
+    // that hasn't moved yet. A DEFERRABLE one waits until the statement is done.
     await insertSets(await createWorkout(), [[exerciseIds.squat, 1], [exerciseIds.squat, 2], [exerciseIds.squat, 3]]);
     await migrate({ direction: 'up', file: MIGRATION });
 

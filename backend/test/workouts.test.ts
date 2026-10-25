@@ -10,14 +10,13 @@ import type {
   WorkoutSet,
 } from '../src/types/models';
 
-// At the top level, afterAll runs once after every describe in this file. Inside a describe,
-// it would close the pool when that block finished, before the next block's tests ran.
+// At the top level so it runs once after every describe. Inside one, it would close the pool
+// before the next block's tests ran.
 afterAll(async () => {
   await pool.end();
 });
 
-// Dates both routes must reject. Before strict validation, each one either reached Postgres and
-// failed there (a 500), or was accepted by both JS and Postgres (a silent wrong 201/200).
+// Dates both routes must reject before they reach Postgres.
 const INVALID_DATES = [
   // Date.parse rolls these over to the next month; Postgres rejects them (500).
   '2026-02-29', // 2026 isn't a leap year
@@ -26,7 +25,7 @@ const INVALID_DATES = [
   '1900-02-29', // divisible by 100 but not 400, so not a leap year
   '0000-01-01', // JS has a year 0; Postgres (like the calendar) doesn't
   '+002026-10-07', // JS's extended-year format
-  // Both accept these, so the wrong format was stored without complaint (201/200).
+  // JS and Postgres both accept these, so without the check they'd be stored wrongly.
   '10/07/2026', // Postgres reads it month-first; a DD/MM client meant 10 July
   'October 7, 2026',
   '2026-10-07T12:00:00Z', // a timestamp, not a date
@@ -34,9 +33,8 @@ const INVALID_DATES = [
   ' 2026-10-07', // leading space
 ];
 
-// Every workout `date` in a response is a plain calendar day, 'YYYY-MM-DD', never a timestamp
-// like '2026-09-05T04:00:00.000Z' (whose day depends on the server's time zone). Used where the
-// test doesn't control the date (the column default, today); tests that set a date expect it exactly.
+// A plain 'YYYY-MM-DD' day, never a timestamp whose day depends on the server's time zone.
+// For dates the test doesn't control (the column default, today).
 const DATE_ONLY = expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/);
 
 // Real leap days, so a check that's too strict (e.g. rejecting every Feb 29) fails.
@@ -74,9 +72,8 @@ describe('POST /workouts with a valid token', () => {
 
   beforeEach(async () => {
     await resetDb();
-    // Create a decoy user first so the lifter gets id 2. If the route still hard-codes
-    // user 1, the insert succeeds (user 1 exists) and the test fails on the user_id,
-    // instead of on a foreign-key error that would hide the real bug.
+    // A decoy first, so the lifter is id 2: a route that hard-codes user 1 then fails on the
+    // user_id, not on a foreign-key error that would hide the real bug.
     await createUser('decoy@example.com', 'password');
     lifter = await createUser('lifter@example.com', 'password');
     exerciseId = (await createExercise('Squat')).id;
@@ -111,8 +108,7 @@ describe('POST /workouts with a valid token', () => {
     ]);
   });
 
-  // The server assigns set_number, so a client sending one is a mistake worth reporting, not
-  // something to silently ignore. Other unknown keys get the same 400.
+  // The server assigns set_number, so a client sending one is a mistake worth reporting.
   it.each([
     ['a set_number', { set_number: 1 }],
     ['an unknown field', { rpe: 8 }],
@@ -153,7 +149,6 @@ describe('POST /workouts with a valid token', () => {
       });
 
     expect(res.status).toBe(400);
-    // expect.any(String) matches any string, so the test doesn't pin the exact wording.
     expect(res.body).toEqual({ error: expect.any(String) });
     const workouts = await pool.query('SELECT id FROM workouts');
     const sets = await pool.query('SELECT id FROM sets');
@@ -411,7 +406,6 @@ describe('GET /workouts/:id with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
 
     expect(res.status).toBe(200);
-    // Annotated so the expected object is checked against the type: a typo in a key is a compile error.
     const expected: WorkoutDetail = {
       id: day.id,
       // Exactly the stored day, whatever the server's time zone (no JS Date in between).
@@ -503,8 +497,7 @@ describe('PATCH /workouts/:id with a valid token', () => {
       ],
     };
     expect(res.body).toEqual(expected);
-    // The response alone could be built from the request body without writing anything,
-    // so check the row too.
+    // The response alone could be echoed from the request without saving anything.
     const saved = await pool.query<Pick<Workout, 'notes'>>('SELECT notes FROM workouts WHERE id = $1', [workout.id]);
     expect(saved.rows).toEqual([{ notes: 'Heavy leg day' }]);
   });
@@ -517,8 +510,7 @@ describe('PATCH /workouts/:id with a valid token', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: workout.id, date: '2026-09-01', notes: 'Leg day' });
-    // date::text makes Postgres format the DATE itself ('YYYY-MM-DD'), so the check doesn't
-    // depend on how a JS Date converts it in this machine's time zone.
+    // date::text, so the check doesn't depend on this machine's time zone.
     const saved = await pool.query<{ date: string; notes: string | null }>(
       'SELECT date::text AS date, notes FROM workouts WHERE id = $1',
       [workout.id]
@@ -638,7 +630,6 @@ describe('DELETE /workouts/:id with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
 
     expect(res.status).toBe(204);
-    // 204 No Content means the response has no body at all, so the raw text is empty.
     expect(res.text).toBe('');
     // Checked through the API rather than the table: the client-visible result is that it's gone.
     const after = await request(app)
@@ -677,7 +668,6 @@ describe('DELETE /workouts/:id with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
 
     expect(first.status).toBe(204);
-    // The second call finds nothing to delete, so it reports that rather than a second success.
     expect(second.status).toBe(404);
     expect(second.body).toEqual({ error: expect.any(String) });
   });
@@ -712,9 +702,8 @@ describe('DELETE /workouts/:id with a valid token', () => {
 // Ids every :id/:setId route must reject with 400 (see the GET /workouts/:id tests for why each).
 const INVALID_IDS = ['abc', '0', '-1', '1.5', '1e3', '99999999999', '2147483648'];
 
-// One set's stored columns, read straight from the table so tests can check whether a write
-// happened, independently of what the route returned. Omit<T, K> is Pick's opposite: every
-// field of T except K.
+// Straight from the table, to check a write happened whatever the route returned.
+// Omit<T, K> is Pick's opposite: every field of T except K.
 async function readSet(setId: number): Promise<Omit<WorkoutSet, 'id'> | undefined> {
   const result = await pool.query<Omit<WorkoutSet, 'id'>>(
     'SELECT workout_id, exercise_id, set_number, reps, weight, unit FROM sets WHERE id = $1',
@@ -869,8 +858,8 @@ describe('PATCH /workouts/:id/sets/:setId with a valid token', () => {
     ['reps as a string', { reps: '5' }],
     ['negative weight', { weight: -5 }],
     ['weight as a string', { weight: '100' }],
-    // The server owns set_number (each exercise's sets are 1..n), and a set's exercise is fixed:
-    // a set logged under the wrong exercise is deleted and added again under the right one.
+    // The server owns set_number, and a set's exercise is fixed: a set logged under the wrong
+    // exercise is deleted and added again under the right one.
     ['a set_number', { set_number: 3 }],
     ['an exercise_id', { exercise_id: 2 }],
     ['an unknown unit', { unit: 'stone' }],
@@ -966,7 +955,7 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
   });
 
   it('moves the later sets of the same exercise down one, leaving other exercises and workouts alone', async () => {
-    // Squat 1 (createWorkout) and 2 (`set`), then Bench 1, Squat 3, Bench 2, Squat 4.
+    // Interleaved with Bench, so renumbering by position in the workout would go wrong.
     const benchId = (await createExercise('Bench')).id;
     await addSet(workout.id, benchId, 1, 8, 135);
     await addSet(workout.id, squatId, 3, 3, 130);
@@ -978,7 +967,6 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
 
     expect(res.status).toBe(204);
-    // Squat 3 and 4 become 2 and 3, keeping their order; Bench's numbers don't change.
     expect(await setNumbersOf(workout.id)).toEqual([
       [squatId, 1],
       [benchId, 1],
@@ -990,8 +978,7 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
   });
 
   it("changes only the later sets' set_number when set 1 is deleted, not their reps, weight or unit", async () => {
-    // Squat 1 (createWorkout: 5 × 100 lb) and 2 (`set`: 3 × 120 lb), plus a Squat 3 that differs
-    // in every column, so a renumbering that touched anything else would show.
+    // Squat 3 differs from set 2 in every column, so a renumbering that touched anything else would show.
     const squat3 = await addSet(workout.id, squatId, 3, 8, 52.5, 'kg');
     const [squat1 = -1] = await setIdsOf(workout.id);
     const set2Before = await readSet(set.id);
@@ -1002,19 +989,16 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
 
     expect(res.status).toBe(204);
-    // Straight from the table: each row is as it was, apart from moving up one place.
     expect(await readSet(set.id)).toEqual({ ...set2Before, set_number: 1 });
     expect(await readSet(squat3.id)).toEqual({ ...set3Before, set_number: 2 });
     expect(await readSet(set.id)).toMatchObject({ reps: 3, weight: 120, unit: 'lb' });
     expect(await readSet(squat3.id)).toMatchObject({ reps: 8, weight: 52.5, unit: 'kg' });
   });
 
-  // The bug: exercises were ordered by their oldest remaining set, so deleting an exercise's first
-  // set could move its whole card below exercises added before its second set. On the phone it
-  // looked as if the exercise's later sets had been deleted too.
+  // An exercise keeps the place it was first added, not the place of its oldest remaining set.
+  // Otherwise its card jumps down and its later sets look deleted on the phone.
   it("keeps the exercise's place in the workout when its first set is deleted", async () => {
-    // Built the way the detail screen does it: Squat logged, then "+ Add exercise" Bench, then
-    // "+ Add set" on Squat. Squat set 2 is newer than Bench set 1.
+    // Squat set 2 is added after Bench, as the detail screen's Add set button does.
     const benchId = (await createExercise('Bench')).id;
     const day = await createWorkoutOn(lifter.id, '2026-09-05');
     const squat1 = await addSet(day.id, squatId, 1, 5, 100);
@@ -1051,8 +1035,7 @@ describe('DELETE /workouts/:id/sets/:setId with a valid token', () => {
       .set('Authorization', authHeader(lifter.id));
     expect(detail.body).toMatchObject({ id: otherWorkout.id, notes: 'Another day', sets: [] });
 
-    // The list still includes the emptied workout, with sets: [], so the client can show it
-    // (e.g. "Another day: no sets yet").
+    // The list keeps the emptied workout, so the client can still show it.
     const history = await request(app).get('/workouts').set('Authorization', authHeader(lifter.id));
     const workouts: WorkoutDetail[] = history.body;
     expect(workouts.filter((w) => w.id === otherWorkout.id)).toEqual([
@@ -1176,13 +1159,12 @@ describe('POST /workouts/:id/sets with a valid token', () => {
       ],
     };
     expect(res.body).toEqual(expected);
-    // The response is read back from the table, but count the rows too, so a route that
-    // inserted twice would fail.
+    // Count the rows too, so a route that inserted twice would fail.
     expect(await setIdsOf(workout.id)).toHaveLength(2);
   });
 
   it("numbers the set after the highest of the same exercise, whatever other exercises have", async () => {
-    // Bench 1-3 after Squat 1: the workout's highest + 1 would make the new Squat set 4.
+    // Numbering from the workout's highest set would make the new Squat set 4.
     await addSet(workout.id, benchId, 1, 8, 135);
     await addSet(workout.id, benchId, 2, 8, 135);
     await addSet(workout.id, benchId, 3, 8, 135);
@@ -1233,9 +1215,8 @@ describe('POST /workouts/:id/sets with a valid token', () => {
   });
 
   it('gives adds sent at the same time distinct, consecutive numbers', async () => {
-    // Without the workout lock, each add could read the same highest number and save a duplicate
-    // (the unique constraint then makes one a 500). A race can pass by luck, so this test is a
-    // guard against losing the lock, not proof on its own.
+    // Without the workout lock, two adds could read the same highest number and one would fail (a 500).
+    // A race can pass by luck, so this guards the lock rather than proves it.
     const adds = Array.from({ length: 5 }, () =>
       request(app)
         .post(`/workouts/${workout.id}/sets`)
@@ -1384,8 +1365,7 @@ describe('POST /workouts/:id/sets with a valid token', () => {
   });
 
   // exercise_id 1 is Squat (resetDb restarts ids), so only the named problem makes each body invalid.
-  // The row type is spelled out because the rows come from different places (literals and the
-  // spread .map() results), and TypeScript would otherwise infer a loose array instead of pairs.
+  // Typed as pairs, or mixing literals with spread .map() rows would infer a loose array.
   type BodyCase = [label: string, body: Record<string, unknown>];
   const invalidBodies: BodyCase[] = [
     ['an empty object', {}],

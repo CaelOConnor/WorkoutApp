@@ -22,22 +22,15 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-// Renders the whole app (src/app/, relative to the folder Jest runs in) at `initialUrl`.
-//
-// Returns { getPathname } for checking the current route. Expo Router's toHavePathname matcher
-// doesn't work with RNTL 14: render() became async, so renderRouter now returns a Promise with
-// getPathname() attached to the Promise itself, and `screen` doesn't get it. (Its types still
-// describe the old synchronous result, which is why `await rendered` looks odd but is needed.)
-// It's wrapped in a plain object because returning a Promise from an async function unwraps it,
-// which would lose getPathname again.
+// With RNTL 14, renderRouter returns a Promise with getPathname on it (toHavePathname can't see it).
+// Returning that Promise from an async function would unwrap it and lose getPathname, hence the object.
 async function renderApp(initialUrl = '/') {
   const rendered = renderRouter('./src/app', { initialUrl });
   await rendered;
   return { getPathname: () => rendered.getPathname() };
 }
 
-// Fills in the form and presses the button. Queries find elements the way a user (or a screen
-// reader) would: by their accessibility label or role, not by component names or styles.
+// Queries find elements the way a user or screen reader would: by label or role, not component names.
 async function submitForm(buttonName: RegExp, email = EMAIL, password = PASSWORD) {
   await fireEvent.changeText(screen.getByLabelText('Email'), email);
   await fireEvent.changeText(screen.getByLabelText('Password'), password);

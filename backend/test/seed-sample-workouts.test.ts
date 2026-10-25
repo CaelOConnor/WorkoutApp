@@ -46,7 +46,6 @@ describe('seedSampleWorkouts', () => {
       expect(row.notes.startsWith(SAMPLE_NOTES_PREFIX)).toBe(true);
       expect(row.set_count).toBeGreaterThan(0);
     }
-    // A mix of exercises: every built-in one is used somewhere.
     const used = await pool.query<{ name: string }>(
       `SELECT DISTINCT e.name FROM sets s
        JOIN exercises e ON e.id = s.exercise_id
@@ -67,8 +66,7 @@ describe('seedSampleWorkouts', () => {
     await createUser(EMAIL, 'pw');
     await seedSampleWorkouts(EMAIL, TODAY);
 
-    // array_agg collects a group's values into one Postgres array (a JS array once pg reads it),
-    // here each exercise's set numbers in one workout, in the order the sets were added.
+    // array_agg gathers each exercise's set numbers per workout into one array, in the order added.
     const result = await pool.query<{ numbers: number[] }>(
       'SELECT array_agg(set_number ORDER BY id) AS numbers FROM sets GROUP BY workout_id, exercise_id'
     );
@@ -91,11 +89,11 @@ describe('seedSampleWorkouts', () => {
     const second = await seedSampleWorkouts(EMAIL, TODAY);
 
     const rows = await sampleWorkouts(user.id);
-    // Same number of samples, all new rows (the old ones were deleted, not added to)...
+    // The old samples are replaced, not added to.
     expect(second).toBe(first);
     expect(rows.filter((r) => r.notes.startsWith(SAMPLE_NOTES_PREFIX))).toHaveLength(first);
     expect(rows.some((r) => firstIds.includes(r.id) && r.id !== mine.id)).toBe(false);
-    // ...the user's own workout survived, and so did another user's, even with a "Sample:" note.
+    // Another user's workout survives even with a "Sample:" note.
     expect(rows.map((r) => r.id)).toContain(mine.id);
     const otherRows = await sampleWorkouts(other.id);
     expect(otherRows.map((r) => r.id)).toEqual([theirs.id]);
@@ -108,6 +106,7 @@ describe('seedSampleWorkouts', () => {
   });
 
   it('fails clearly when the built-in exercises are missing, and writes nothing', async () => {
+    // Undo the beforeEach seed.
     await resetDb();
     const user = await createUser(EMAIL, 'pw');
 
