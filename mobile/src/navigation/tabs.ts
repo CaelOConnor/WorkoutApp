@@ -1,6 +1,5 @@
-// The tab bar's tabs, in order. Shared by the tabs layout (src/app/(tabs)/_layout.tsx) and the root
-// Stack, which names the tabs screen after the focused tab for the back button. Not in src/app/:
-// every file there becomes a route.
+// Shared with the root Stack, which names the tabs screen after the focused tab for the back
+// button. Not in src/app/, where every file becomes a route.
 import type { SymbolViewProps } from 'expo-symbols';
 
 export interface Tab {

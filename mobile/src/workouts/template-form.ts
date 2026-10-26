@@ -1,7 +1,4 @@
-// State of the template form (new template, edit template), as a reducer: a pure function
-// (state, action) -> new state, like log-form.ts. The screen holds it with useReducer and only
-// dispatches actions, so every rule here (no duplicate exercises, set counts within limits,
-// reordering) is tested without rendering anything.
+// The template form as a reducer, like log-form.ts, so its rules are tested without rendering.
 import type { Exercise, TemplateBody, TemplateDetail, WorkoutDetail } from '@shared/models';
 
 import { groupSetsByExercise } from './detail';
@@ -17,8 +14,7 @@ const MAX_NAME_LENGTH = 100;
 export const NAME_ERROR = 'Template names must be 1 to 100 characters';
 export const NO_EXERCISES_ERROR = 'Add at least one exercise.';
 
-// One row of the form. The key identifies the row for React and for actions and never changes,
-// even when the row moves, unlike its position.
+// The key never changes, even when the row moves, so it identifies the row for React and actions.
 export interface TemplateFormExercise {
   key: number;
   exerciseId: number;
@@ -33,7 +29,7 @@ export interface TemplateForm {
   nextKey: number;
 }
 
-// A discriminated union on `type`, as in log-form.ts. `by` is a step for the − / + buttons.
+// `by` is a step for the minus and plus buttons.
 export type TemplateAction =
   | { type: 'setName'; name: string }
   | { type: 'addExercise'; exercise: Pick<Exercise, 'id' | 'name'> }
@@ -62,10 +58,8 @@ export interface TemplateFromWorkout {
   cappedExercises: string[];
 }
 
-// "Save as template" on a workout: its exercises in the order they were first done, each with as
-// many sets as it had, and a blank name. A workout only lists an exercise through its sets
-// (WorkoutDetail has no separate exercise list), so an exercise with no sets is left out simply by
-// grouping. Counts above the server's limit are capped and reported, not rejected.
+// An exercise with no sets is left out, since a workout only lists exercises through their sets.
+// Counts above the server's limit are capped and reported, not rejected.
 export function templateFromWorkout(workout: WorkoutDetail): TemplateFromWorkout {
   const groups = groupSetsByExercise(workout.sets);
   const exercises = groups.map((group, i) => ({
@@ -83,13 +77,11 @@ export function templateFromWorkout(workout: WorkoutDetail): TemplateFromWorkout
   };
 }
 
-// Math.min/max keep a value inside [MIN, MAX]: "clamping".
 function clampSetCount(count: number): number {
   return Math.min(MAX_SET_COUNT, Math.max(MIN_SET_COUNT, count));
 }
 
-// Every case returns a new object instead of changing `form`, or `form` itself when nothing
-// changes, which tells React it needn't re-render.
+// Returns `form` itself when nothing changes, which tells React it needn't re-render.
 export function templateFormReducer(form: TemplateForm, action: TemplateAction): TemplateForm {
   switch (action.type) {
     case 'setName':
@@ -173,14 +165,12 @@ export function validateTemplateForm(form: TemplateForm): TemplateValidation {
   return { nameError, exercisesError, body };
 }
 
-// What saving would store, as a string, so two forms compare by content: row keys don't matter,
-// and neither do spaces around the name (they're trimmed on save).
+// As a string, so two forms compare by content. Row keys and spaces around the name don't count.
 function savedContent(form: TemplateForm): string {
   return JSON.stringify([form.name.trim(), form.exercises.map((e) => [e.exerciseId, e.setCount])]);
 }
 
-// Whether leaving would lose anything: the form differs from how it started. Changes that cancel
-// out (a move up and back down) don't count.
+// Changes that cancel out, like a move up and back down, don't count.
 export function templateFormChanged(form: TemplateForm, initial: TemplateForm): boolean {
   return savedContent(form) !== savedContent(initial);
 }

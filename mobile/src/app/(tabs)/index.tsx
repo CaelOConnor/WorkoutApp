@@ -15,29 +15,25 @@ import { formatWorkoutDate, groupByWeek, localDateString } from '@/workouts/date
 import { exerciseNames, setCountLabel } from '@/workouts/summary';
 import { useWorkouts } from '@/workouts/use-workouts';
 
-// The home screen: the user's workouts, one section per week. Only reachable while signed in.
+// The History tab: the user's workouts, grouped by week.
 export default function HistoryScreen() {
   const { logout } = useAuth();
   const router = useRouter();
   const workouts = useWorkouts();
-  // Ignores a second tap on a row or "+ Log workout" until this screen is shown again.
+  // Ignores a second tap while the first one is still opening a screen.
   const guard = usePressGuard();
-  // True only during a pull-to-refresh, so the list's spinner doesn't also appear for background
-  // refetches (e.g. on returning to the app), which would be distracting.
+  // Only true during pull-to-refresh, so background refreshes don't show a spinner.
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
     setRefreshing(true);
-    // refetch() doesn't throw: a failure lands in workouts.error, like any other fetch.
-    await workouts.refetch();
+    await workouts.refetch(); // a failure shows up in workouts.error, it doesn't throw
     setRefreshing(false);
   }
 
   return (
     <ThemedView style={styles.screen}>
-      {/* Header buttons for this screen. headerLeft/headerRight work on both iOS and Android.
-          The home screen has no back button, so its left side is free for logging out.
-          Tabs.Screen, not Stack.Screen: this screen is a tab, so its options go to the tabs. */}
+      {/* Header buttons. Tabs.Screen because this screen is a tab. */}
       <Tabs.Screen
         options={{
           headerLeft: () => <TextButton label="Log out" onPress={() => void logout()} />,
@@ -45,14 +41,14 @@ export default function HistoryScreen() {
             <TextButton
               label="+ Log workout"
               accessibilityLabel="Log workout"
-              // Opens a sheet to choose an empty workout or a template.
+              // Opens a sheet: start empty or from a template.
               onPress={() => guard.navigate(() => router.push('/workouts/start'))}
             />
           ),
         }}
       />
       {workouts.data === undefined ? (
-        // No data yet: either the first load is running or it failed.
+        // No data yet: still loading, or the first load failed.
         workouts.isError ? (
           <ErrorState
             error={workouts.error}
@@ -63,19 +59,17 @@ export default function HistoryScreen() {
           <LoadingState label="Loading workouts" />
         )
       ) : (
-        // Once there's data it stays on screen, even if a later refetch fails.
+        // Once loaded, the list stays on screen even if a later refresh fails.
         <SectionList
           testID="workout-history"
-          // "Today" is taken from when the data was fetched, not from the clock during render:
-          // rendering stays pure, and the labels still move on at midnight because the list is
-          // refetched whenever the app comes back to the foreground.
+          // "Today" comes from when the data was loaded, not the current clock.
+          // The list reloads when the app reopens, so labels still update after midnight.
           sections={groupByWeek(workouts.data, localDateString(new Date(workouts.dataUpdatedAt)))}
           keyExtractor={(workout) => String(workout.id)}
           renderSectionHeader={({ section }) => <WeekHeader title={section.title} />}
           renderItem={({ item }) => (
             <WorkoutRow
               workout={item}
-              // A typed route: pathname must be a real route, and params must match its [id].
               onPress={() =>
                 guard.navigate(() =>
                   router.push({ pathname: '/workouts/[id]', params: { id: String(item.id) } })
@@ -84,7 +78,7 @@ export default function HistoryScreen() {
             />
           )}
           ItemSeparatorComponent={Separator}
-          // Inside the list (not instead of it), so pull-to-refresh works when it's empty too.
+          // Inside the list, so pull-to-refresh still works when there are no workouts.
           ListEmptyComponent={EmptyState}
           contentContainerStyle={workouts.data.length === 0 && styles.emptyContent}
           refreshing={refreshing}
@@ -97,7 +91,7 @@ export default function HistoryScreen() {
 
 function WeekHeader({ title }: { title: string }) {
   return (
-    // A background, because section headers stick to the top on iOS while their rows scroll under.
+    // Has a background because headers stick to the top on iOS while rows scroll under them.
     <ThemedView style={styles.sectionHeader}>
       <ThemedText type="smallBold" themeColor="textSecondary" accessibilityRole="header">
         {title}
@@ -116,7 +110,7 @@ function WorkoutRow({ workout, onPress }: { workout: WorkoutDetail; onPress: () 
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      // One sentence for screen readers instead of three separate stops.
+      // Read as one sentence by screen readers.
       accessibilityLabel={`${date}, ${names}, ${setCount}`}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
       <View style={styles.rowTop}>
@@ -149,8 +143,7 @@ function EmptyState() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  // Lets the empty state fill the screen, so it can be centered.
-  emptyContent: { flexGrow: 1 },
+  emptyContent: { flexGrow: 1 }, // lets the empty message fill the screen, so it can be centered
   sectionHeader: {
     paddingHorizontal: Spacing.three,
     paddingTop: Spacing.four,

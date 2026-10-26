@@ -11,63 +11,54 @@ import { useApi } from '@/auth/auth-provider';
 
 import type { SetValues } from './forms';
 
-// Cache keys. A workout's key starts with the list's key, so invalidating ['workouts'] (a prefix
-// match) refreshes the history and every workout detail in one call. `as const` makes each key
-// an exact readonly tuple instead of a loose (string | number)[].
+// Cache keys. A workout's key starts with the list's key, so refreshing ['workouts']
+// refreshes the history and every workout at once.
 export const WORKOUTS_QUERY_KEY = ['workouts'] as const;
 
 export function workoutQueryKey(id: number) {
   return [...WORKOUTS_QUERY_KEY, id] as const;
 }
 
-// Every workout of the logged-in user, newest first (GET /workouts). useQuery caches the result,
-// shares it between screens, and refetches it when the app returns to the foreground.
+// All of the user's workouts, cached and shared between screens.
 export function useWorkouts() {
   const api = useApi();
   return useQuery({
     queryKey: WORKOUTS_QUERY_KEY,
-    // The guard makes request() return Promise<WorkoutDetail[]>, so `data` is typed from it.
     queryFn: () => api.request('/workouts', { guard: isWorkoutDetailList }),
   });
 }
 
-// One workout with its sets (GET /workouts/:id). `id` is null for a route param that isn't a
-// valid id; `enabled: false` then skips the request, and the screen shows "not found".
+// One workout. id is null when the URL's id is invalid, and then nothing is fetched.
 export function useWorkout(id: number | null) {
   const api = useApi();
   return useQuery({
-    // -1 never reaches the server: it only keeps the key's type a number while disabled.
-    queryKey: workoutQueryKey(id ?? -1),
+    queryKey: workoutQueryKey(id ?? -1), // -1 is never fetched, it just keeps the key a number
     queryFn: () => api.request(`/workouts/${id}`, { guard: isWorkoutDetail }),
     enabled: id !== null,
   });
 }
 
-// Saves a new workout with all its sets (POST /workouts) and resolves with its id.
+// Saves a new workout and returns its id.
 export function useCreateWorkout() {
   const api = useApi();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateWorkoutBody) =>
       api.request('/workouts', { method: 'POST', body, guard: isCreateWorkoutResponse }),
-    // Not awaited: the log screen moves on to the new workout straight away, and the history
-    // refetches in the background so it's up to date when the user goes back to it.
+    // Not waited on: the app opens the new workout right away while the history refreshes.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: WORKOUTS_QUERY_KEY });
     },
   });
 }
 
-// Every change the detail screen and its sheets can make to one workout. Each is a useMutation:
-// call mutateAsync(...) and await it; it rejects with the API client's errors for the screen to
-// show. onSuccess runs before mutateAsync resolves, and returning the invalidation's promise from
-// it makes the caller wait until the fresh data has arrived, so a sheet closes onto updated data.
+// Every change the workout screen can make. Each one refreshes the data afterward.
+// Returning the refresh makes the caller wait for fresh data, so a sheet closes onto updated data.
 export function useWorkoutMutations(workoutId: number) {
   const api = useApi();
   const queryClient = useQueryClient();
   const path = `/workouts/${workoutId}` as const;
 
-  // Marks the history and every detail stale, and refetches the ones on screen.
   const refreshAll = () => queryClient.invalidateQueries({ queryKey: WORKOUTS_QUERY_KEY });
 
   return {
@@ -79,13 +70,12 @@ export function useWorkoutMutations(workoutId: number) {
 
     deleteWorkout: useMutation({
       mutationFn: () => api.request(path, { method: 'DELETE', guard: isNoContent }),
-      // Only the history: refetching this workout would just 404 while the screen is leaving.
-      // Its cached copy is dropped by itself a few minutes after nothing shows it (gcTime).
+      // Only refresh the history: reloading the deleted workout would just 404.
       onSuccess: () =>
         queryClient.invalidateQueries({ queryKey: WORKOUTS_QUERY_KEY, exact: true }),
     }),
 
-    // `{ setId, values }`: a mutation function takes one argument, so several go in an object.
+    // A mutation takes one argument, so several values go in an object.
     updateSet: useMutation({
       mutationFn: ({ setId, values }: { setId: number; values: SetValues }) =>
         api.request(`${path}/sets/${setId}`, {
@@ -99,8 +89,7 @@ export function useWorkoutMutations(workoutId: number) {
     deleteSet: useMutation({
       mutationFn: (setId: number) =>
         api.request(`${path}/sets/${setId}`, { method: 'DELETE', guard: isNoContent }),
-      // Not awaited: the set sheet closes straight away. Waiting would re-render the sheet with
-      // data that no longer has its set ("Set not found") just before it closes.
+      // Not waited on, so the sheet closes before it could show "Set not found".
       onSuccess: () => {
         void refreshAll();
       },

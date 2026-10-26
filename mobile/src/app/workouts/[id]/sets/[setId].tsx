@@ -16,7 +16,6 @@ import { groupSetsByExercise, parseRouteId } from '@/workouts/detail';
 import { parseSetForm, setFormFrom, type SetForm } from '@/workouts/forms';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
 
-// Edit or delete one set, shown as a sheet over the workout (see SHEET_OPTIONS in _layout.tsx).
 // The workout usually comes straight from the cache, since the detail screen just loaded it.
 export default function EditSetSheet() {
   const { id, setId } = useLocalSearchParams<{ id: string; setId: string }>();
@@ -33,14 +32,14 @@ export default function EditSetSheet() {
     );
   }
 
-  // Find the set, and its position within its exercise for the title ("Squat · Set 2").
+  // Also finds the set's position within its exercise, for the title.
   const wantedId = parseRouteId(setId);
   for (const group of groupSetsByExercise(workout.data.sets)) {
     const index = group.sets.findIndex((s) => s.id === wantedId);
     const set = group.sets[index];
     if (set) {
       return (
-        // key: a different set gets a fresh form, rather than keeping the last one's typing.
+        // The key gives a different set a fresh form instead of keeping the last one's typing.
         <SetEditor
           key={set.id}
           workoutId={workout.data.id}
@@ -66,17 +65,14 @@ interface SetEditorProps {
 function SetEditor({ workoutId, set, title }: SetEditorProps) {
   const router = useRouter();
   const { updateSet, deleteSet } = useWorkoutMutations(workoutId);
-  // The form holds text while typing; parseSetForm turns it into numbers on Save.
-  // useState(() => ...) computes the starting values on the first render only.
+  // Text while typing. parseSetForm turns it into numbers on Save.
   const [form, setForm] = useState<SetForm>(() => setFormFrom(set));
   const [error, setError] = useState<string | null>(null);
   const busy = updateSet.isPending || deleteSet.isPending;
-  // Save, Delete and Cancel share one lock: a second tap does nothing while one is running, and
-  // after a success the sheet stays locked while it closes, so a late tap can't close the
-  // workout screen under it too.
+  // Shared by Save, Delete and Cancel. After a success it stays locked while the sheet closes,
+  // so a late tap can't also close the workout screen under it.
   const guard = usePressGuard();
 
-  // Partial<SetForm>: any subset of the fields, merged over the current ones.
   function update(change: Partial<SetForm>) {
     setForm((current) => ({ ...current, ...change }));
   }

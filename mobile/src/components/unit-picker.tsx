@@ -15,8 +15,7 @@ export interface UnitPickerProps {
   size?: 'full' | 'compact';
 }
 
-// lb / kg side by side, one selected. Each is a "radio" to screen readers, with its checked
-// state, which is how they announce a choose-one-of-several control.
+// Radio roles are how screen readers announce a choose-one control.
 export function UnitPicker({ value, onChange, label = 'Unit', size = 'full' }: UnitPickerProps) {
   const theme = useTheme();
 

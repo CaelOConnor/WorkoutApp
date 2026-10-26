@@ -14,8 +14,7 @@ import { formatShortDate, localDateString } from '@/workouts/dates';
 import { filterLogged } from '@/workouts/progress';
 import { useLoggedExercises } from '@/workouts/use-progress';
 
-// Pick an exercise to chart: the ones the user has logged, most recent first, with a search box.
-// Only reachable while signed in.
+// The Progress tab: pick a logged exercise to see its chart.
 export default function ProgressListScreen() {
   const router = useRouter();
   const exercises = useLoggedExercises();
@@ -47,7 +46,7 @@ export default function ProgressListScreen() {
     if (matches.length === 0) {
       return <MessageState title="No exercises match" />;
     }
-    // From when the data was fetched, as on the history screen, so rendering stays pure.
+    // The year comes from when the data loaded, not the clock, so rendering stays pure.
     const currentYear = Number(localDateString(new Date(exercises.dataUpdatedAt)).slice(0, 4));
     return (
       <FlatList

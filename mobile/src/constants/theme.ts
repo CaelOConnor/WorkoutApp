@@ -1,8 +1,3 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform } from 'react-native';
 
 export const Colors = {
@@ -13,8 +8,7 @@ export const Colors = {
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
     danger: '#C62828',
-    // A chart's data series. Blue, the one color here with a hue: black or white would read as
-    // gray next to the axes. Each mode's step was checked for contrast on its background.
+    // Blue for chart lines, since black or white would read as gray next to the axes.
     chart: '#2a78d6',
   },
   dark: {
@@ -24,8 +18,7 @@ export const Colors = {
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
     danger: '#FF8A80',
-    // A chart's data series. Blue, the one color here with a hue: black or white would read as
-    // gray next to the axes. Each mode's step was checked for contrast on its background.
+    // Lighter than in light mode, for contrast on black.
     chart: '#3987e5',
   },
 } as const;

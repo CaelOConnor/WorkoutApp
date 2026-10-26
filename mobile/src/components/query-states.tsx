@@ -1,5 +1,4 @@
-// What a screen shows while its data isn't there: loading, failed, or a plain message
-// (e.g. "Workout not found"). Shared so every screen handles these the same way.
+// Shared so every screen shows loading, errors and "not found" the same way.
 import type { ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -34,7 +33,6 @@ export function ErrorState({ error, onRetry, retrying }: ErrorStateProps) {
   );
 }
 
-// A centered message, with optional extra content (a hint, a button) underneath.
 export function MessageState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <View style={styles.centered}>

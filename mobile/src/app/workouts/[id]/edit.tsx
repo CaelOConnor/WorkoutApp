@@ -12,8 +12,7 @@ import { parseRouteId } from '@/workouts/detail';
 import { parseWorkoutForm, workoutFormFrom, type WorkoutForm } from '@/workouts/forms';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
 
-// Change a workout's date and notes, from the detail screen's "Edit" header button.
-// Shown as a sheet (see SHEET_OPTIONS in _layout.tsx).
+// Edit a workout's date and notes. Opens as a sheet (SHEET_OPTIONS in _layout.tsx).
 export default function EditWorkoutSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const workout = useWorkout(parseRouteId(id));
@@ -35,7 +34,7 @@ function WorkoutEditor({ workout }: { workout: WorkoutDetail }) {
   const { updateWorkout } = useWorkoutMutations(workout.id);
   const [form, setForm] = useState<WorkoutForm>(() => workoutFormFrom(workout));
   const [error, setError] = useState<string | null>(null);
-  // Shared with Cancel; see the set sheet for why.
+  // Shared with Cancel, so a late tap can't also close the workout screen under the sheet.
   const guard = usePressGuard();
 
   function save() {
@@ -57,7 +56,6 @@ function WorkoutEditor({ workout }: { workout: WorkoutDetail }) {
 
   return (
     <Sheet title="Edit workout" guard={guard}>
-      {/* Typed as text for now; a native date picker can replace it later. */}
       <TextField
         label="Date"
         placeholder="YYYY-MM-DD"

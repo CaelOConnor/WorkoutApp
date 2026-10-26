@@ -44,16 +44,11 @@ import {
 import { useFetchLastSets, useLastSets, useTemplate } from '@/workouts/use-templates';
 import { useCreateWorkout } from '@/workouts/use-workouts';
 
-// Log a new workout: date, notes, and exercises with their sets, saved in one POST /workouts.
-// Two ways in:
-// - "Empty workout" (from History's "+ Log workout"): no exercises yet.
-// - A template (/workouts/new?templateId=1, from "Start workout" or the same chooser): its
-//   exercises and set counts, each row hinted with last time's numbers.
-// Only reachable while signed in.
+// Log a new workout, empty or from a template with ?templateId=1.
 export default function LogWorkoutScreen() {
-  // A query param, like a path param: a string, a string[] if repeated, or undefined.
+  // A query param can also be a string[] if repeated, or undefined.
   const { templateId } = useLocalSearchParams<{ templateId?: string }>();
-  // "Today" on the phone's calendar, fixed when the screen opens. useState's initializer runs once.
+  // Fixed when the screen opens, so the date doesn't change while the form is open.
   const [today] = useState(() => localDateString());
 
   if (templateId === undefined) {
@@ -81,9 +76,8 @@ function FromTemplate({ templateId, today }: { templateId: number | null; today:
       </ThemedView>
     );
   }
-  // isFetchedAfterMount: last sets may already be cached from an earlier visit, but a workout
-  // logged since then changes them, so wait for this screen's own fetch. It stays true through
-  // later background refetches, so the form isn't swapped out once shown.
+  // Cached last sets may be from before a newer workout, so wait for this screen's own fetch.
+  // isFetchedAfterMount stays true through background refetches, so the form isn't swapped out.
   if (template.data && lastSets.data && lastSets.isFetchedAfterMount) {
     return <TemplateForm template={template.data} lastSets={lastSets.data} today={today} />;
   }
@@ -120,9 +114,7 @@ function TemplateForm({
 function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title?: string }) {
   const router = useRouter();
   const navigation = useNavigation();
-  // The starting form, kept so hasChanges can compare against it (leaving a template workout
-  // untouched asks nothing). useReducer only reads its second argument on the first render;
-  // dispatch(action) then runs the reducer (src/workouts/log-form.ts) and re-renders.
+  // Kept so leaving an untouched template workout doesn't ask to discard it.
   const [initial] = useState(firstForm);
   const [form, dispatch] = useReducer(logFormReducer, initial);
   // True after the first press of Save: from then on, empty fields show their errors too.
@@ -132,15 +124,14 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
   const createWorkout = useCreateWorkout();
   const fetchLastSets = useFetchLastSets();
   const guard = usePressGuard();
-  // Set just before leaving after a save, so the discard check below lets that navigation through.
-  // A ref, not state: it must be readable in the same moment, before any re-render.
+  // Set just before leaving after a save, so the discard check lets it through. A ref, since
+  // state wouldn't update until the next render.
   const saved = useRef(false);
 
   const validation = validateLogForm(form);
 
-  // Runs whenever this screen is about to be removed while `preventRemove` is true: the back
-  // button, the iOS swipe, Android's back key, or router.replace after saving. The removal is
-  // put on hold; navigation.dispatch(data.action) lets it continue.
+  // Holds any way of leaving, including router.replace after saving, until
+  // navigation.dispatch(data.action) lets it continue.
   usePreventRemove(hasChanges(form, initial), ({ data }) => {
     if (saved.current) {
       navigation.dispatch(data.action);
@@ -159,8 +150,7 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
   });
 
   function save() {
-    // Through the guard: a double-tap sends one request, and the screen stays locked while it
-    // leaves. (`form` here is the state this render saw, which is what the user just tapped on.)
+    // Through the guard, so a double tap sends one request and the screen stays locked as it leaves.
     void guard.run(async (leave) => {
       setSubmitted(true);
       setSaveError(null);
@@ -171,8 +161,7 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
       try {
         const { id } = await createWorkout.mutateAsync(body);
         saved.current = true;
-        // replace, not push: the log screen leaves the stack, so back from the new workout goes
-        // to the history rather than to a filled-in form for a workout that's already saved.
+        // replace, not push, so back from the new workout skips this already-saved form.
         leave(() => router.replace({ pathname: '/workouts/[id]', params: { id: String(id) } }));
       } catch (e: unknown) {
         setSaveError(errorMessage(e));
@@ -180,15 +169,14 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
     });
   }
 
-  // An error is shown next to its field once the field has text, or after Save was pressed, so a
-  // fresh empty row isn't red before the user has typed anything.
+  // Waits for text or a Save press, so a new empty row isn't red before the user types.
   function visibleError(text: string, error: string | null): string | null {
     return submitted || text.trim() !== '' ? error : null;
   }
 
   return (
     <ThemedView style={styles.screen}>
-      {/* The template's name as the title ("Leg day"); otherwise the root layout's "Log workout". */}
+      {/* Without a template, the root layout's title is used. */}
       {title ? <Stack.Screen options={{ title }} /> : null}
       <ScrollView
         contentContainerStyle={styles.content}
@@ -235,8 +223,7 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
           onPress={() => setPickerOpen(true)}
         />
 
-        {/* Always enabled: pressing it with nothing ticked says why nothing can be saved, and
-            with a ticked set still invalid shows that set's errors (see validateLogForm). */}
+        {/* Save is always enabled, so pressing it can explain why nothing can be saved yet. */}
         {submitted && validation.setsError ? <FieldError message={validation.setsError} /> : null}
         {saveError ? <FieldError message={saveError} /> : null}
         <Button label="Save workout" loading={createWorkout.isPending} onPress={save} />
@@ -250,8 +237,7 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
           // The card appears straight away, loading; its rows follow once last time is known.
           dispatch({ type: 'addExercise', exercise, loading: true });
           setPickerOpen(false);
-          // A failed request counts as never logged (one empty row): hints are only a prefill,
-          // and the user can still log the exercise.
+          // A failed request counts as never logged, since hints are only a prefill.
           void fetchLastSets(exercise.id)
             .catch(() => null)
             .then((lastSets) => dispatch({ type: 'fillLastSets', exerciseId: exercise.id, lastSets }));
@@ -263,7 +249,6 @@ function LogWorkoutForm({ initial: firstForm, title }: { initial: LogForm; title
 
 interface ExerciseCardProps {
   exercise: LogExercise;
-  // React.Dispatch<LogAction> is the type of useReducer's dispatch for this reducer.
   dispatch: React.Dispatch<LogAction>;
   errorsFor: (set: LogSet) => SetErrors;
 }
@@ -288,7 +273,7 @@ function ExerciseCard({ exercise, dispatch, errorsFor }: ExerciseCardProps) {
       {exercise.sets.map((set, index) => (
         <SetRow
           key={set.key}
-          // "Squat set 2": names each input for screen readers (and tests) among many alike.
+          // Tells apart many identical inputs for screen readers and tests.
           label={`${name} set ${index + 1}`}
           number={index + 1}
           set={set}
@@ -342,9 +327,8 @@ function SetRow({ label, number, set, errors, onChange, onRemove, onToggle }: Se
   return (
     <View style={styles.setBlock}>
       <View style={styles.setRow}>
-        {/* The ✓: only ticked sets are saved. It shows the set's number until ticked, which
-            keeps the row narrow enough for a phone. A "checkbox" role with a checked state is
-            what screen readers announce ("Squat set 1 done, checkbox, checked"). */}
+        {/* Only ticked sets are saved. Shows the set number until ticked, to keep the row
+            narrow enough for a phone. */}
         <Pressable
           onPress={onToggle}
           accessibilityRole="checkbox"

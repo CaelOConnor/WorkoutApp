@@ -1,7 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-// The JWT lives in SecureStore (the iOS Keychain / Android Keystore), not plain AsyncStorage,
-// because it's a credential: anyone holding it is logged in as the user for 7 days.
+// SecureStore, not AsyncStorage, because anyone holding the token is logged in for 7 days.
 // Keys may only contain letters, digits, '.', '-' and '_'.
 export const TOKEN_KEY = 'auth.token';
 

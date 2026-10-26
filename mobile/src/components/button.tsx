@@ -10,11 +10,9 @@ export interface ButtonProps {
   loading?: boolean;
   // Ignores presses and looks dimmed, without a spinner (e.g. Save before the form is valid).
   disabled?: boolean;
-  // The name screen readers announce, when it should differ from the label
-  // (e.g. '+ Add exercise' is read as 'Add exercise').
+  // What screen readers say, when it should differ from the visible label.
   accessibilityLabel?: string;
-  // 'primary' is filled, for the main action on a screen; 'secondary' is outlined; 'danger' is
-  // outlined in red, for deleting.
+  // 'primary' for a screen's main action, 'danger' for deleting.
   variant?: 'primary' | 'secondary' | 'danger';
 }
 
@@ -35,12 +33,10 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={loading || disabled}
-      // Screen readers announce the role, the name and the state ("Log in, button, dimmed, busy").
-      // The name is set explicitly so it stays the same while the spinner is showing.
+      // Named explicitly so screen readers say the same thing while the spinner shows.
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: loading || disabled, busy: loading }}
-      // style can be a function of the press state, for visual feedback while held down.
       style={({ pressed }) => [
         styles.button,
         primary

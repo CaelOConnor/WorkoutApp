@@ -4,8 +4,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// TextInputProps & { label }: every prop TextInput takes, plus a visible label. The label is also
-// the input's accessible name, so tests and screen readers find it with getByLabelText('Reps').
+// The label is also the input's accessible name, so tests and screen readers find it by label.
 export type TextFieldProps = TextInputProps & { label: string };
 
 export function TextField({ label, style, ...inputProps }: TextFieldProps) {

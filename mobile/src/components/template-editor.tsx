@@ -27,48 +27,39 @@ import {
 } from '@/workouts/template-form';
 
 export interface TemplateEditorProps {
-  // The form's starting state: empty for a new template, the saved one when editing.
   initial: TemplateForm;
-  // Sends the body (POST or PUT) and resolves with the saved template; a rejection (e.g. the 409
-  // for a name in use) is shown above the Save button.
+  // A rejection, like the 409 for a name in use, is shown above the Save button.
   save: (body: TemplateBody) => Promise<TemplateDetail>;
-  // True while `save` runs, for the button's spinner.
   saving: boolean;
-  // Where to go once saved (router.replace for a new template, router.back after an edit).
   onSaved: (template: TemplateDetail) => void;
   // A note above the exercises, e.g. that set counts from a workout were capped.
   notice?: string | null;
 }
 
-// The form behind both "+ New template" (templates/new) and Edit (templates/[id]/edit): a name,
-// and exercises in order, each with a set count. The state lives in a reducer
-// (workouts/template-form.ts); this component only renders it and dispatches actions.
+// Shared by New template and Edit. The rules live in the reducer in workouts/template-form.ts.
 export function TemplateEditor({ initial, save, saving, onSaved, notice }: TemplateEditorProps) {
   const navigation = useNavigation();
   // useReducer's second argument is only read on the first render, so a refetch of the template
   // while the form is open doesn't overwrite what the user is typing.
   const [form, dispatch] = useReducer(templateFormReducer, initial);
-  // The starting state, kept to tell whether anything changed (for the discard prompt). useState
-  // rather than reading `initial` each render, for the same reason as above.
+  // Kept to tell whether anything changed, for the discard prompt.
   const [start] = useState(initial);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const guard = usePressGuard();
-  // Set just before leaving after a save, so the discard check lets that navigation through.
-  // A ref, so it's readable in the same moment, before any re-render (as in workouts/new.tsx).
+  // Set just before leaving after a save, so the discard check lets it through. A ref, since
+  // state wouldn't update until the next render.
   const saved = useRef(false);
 
   const validation = validateTemplateForm(form);
 
-  // Every change goes through here: the server's error is about what was sent, so it's cleared as
-  // soon as the form changes (e.g. the user renames after a "name already in use").
+  // The server's error was about what was sent, so any change clears it.
   function update(action: TemplateAction) {
     setSaveError(null);
     dispatch(action);
   }
 
-  // Back button, iOS swipe, Android back key, or the navigation after saving: held while there
-  // are unsaved changes, until the user answers (see workouts/new.tsx).
+  // Holds any way of leaving while there are unsaved changes, until the user answers.
   usePreventRemove(templateFormChanged(form, start), ({ data }) => {
     if (saved.current) {
       navigation.dispatch(data.action);
@@ -87,7 +78,7 @@ export function TemplateEditor({ initial, save, saving, onSaved, notice }: Templ
   });
 
   function handleSave() {
-    // Through the guard: a double tap sends one request, and the form stays locked while it leaves.
+    // Through the guard, so a double tap sends one request and the form stays locked as it leaves.
     void guard.run(async (leave) => {
       const { body } = validateTemplateForm(form);
       if (!body) {
@@ -147,7 +138,7 @@ export function TemplateEditor({ initial, save, saving, onSaved, notice }: Templ
         />
 
         {saveError ? (
-          // role "alert": screen readers announce it straight away (and tests find it by role).
+          // The alert role makes screen readers announce it at once, and tests find it by role.
           <ThemedText type="small" themeColor="danger" accessibilityRole="alert">
             {saveError}
           </ThemedText>
@@ -205,7 +196,7 @@ function ExerciseRow({ exercise, first, last, dispatch }: ExerciseRowProps) {
       </View>
 
       <View style={styles.cardFooter}>
-        {/* A stepper: − and + around the count, disabled at the server's limits. */}
+        {/* Disabled at the server's set count limits. */}
         <View style={styles.stepper}>
           <TextButton
             label="−"

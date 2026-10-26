@@ -8,20 +8,15 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { usePressGuard, type PressGuard } from '@/hooks/use-press-guard';
 
-// The frame for a screen presented as a form sheet (see SHEET_OPTIONS in app/_layout.tsx): a
-// title row with Cancel, then the content. The title is drawn here rather than in the navigation
-// header because Android doesn't render a header inside a sheet.
-// No flex: 1 anywhere: the sheet measures its content to decide its height ('fitToContents').
-//
-// `guard`: the content's press guard, so Cancel shares a lock with its Save and Delete buttons
-// (no Cancel while a save is running, and a double-tapped Cancel closes only the sheet). Without
-// one, the sheet uses its own.
+// The title is drawn here because Android shows no header inside a sheet.
+// No flex: 1 anywhere: the sheet measures its content to set its height.
 export function Sheet({
   title,
   guard,
   children,
 }: {
   title: string;
+  // The content's guard, so Cancel can't run during a save and a double tap closes only the sheet.
   guard?: PressGuard;
   children: ReactNode;
 }) {

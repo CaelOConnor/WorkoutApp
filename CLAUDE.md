@@ -46,4 +46,14 @@ docs/ROADMAP.md         Known next tasks
 - **Ask before any git command that changes the working tree, index, or history** (e.g. `stash`, `reset`, `checkout`, `restore`, `rm`, `commit`). Read-only commands like `status`, `diff`, and `log` are fine.
 - **TDD**: write a failing test first, run it to see it fail, then write the code to pass it.
 - **Strict TypeScript, no `any`.** Accept `unknown` and narrow it (see `validation.ts`).
-- **Learning project**: explain TypeScript and testing concepts as you go, briefly, in replies and short code comments.
+- **Learning project**: explain TypeScript and testing concepts as you go, briefly, in replies (not in code comments).
+- **Code comments**:
+  - Explain why, not what. If the code or a name already says it, no comment.
+  - Short: one line usually, two at most.
+  - Keep gotchas: anything surprising, like why something isn't awaited, why a component is split out, or why a value comes from the data instead of the clock.
+  - Plain words. No arrows, emojis or symbols like `->` or `=>`, and no jargon where a simple word works.
+  - No history or changelog comments ("added to fix", "used to be", "measured 6.9 s").
+  - Don't explain basic React or TypeScript (useState, useEffect, props, ternaries). Do explain React or React Native behavior that would surprise a reader, in one line.
+  - Don't describe a screen's layout element by element.
+  - Good: `// Its own component so it can use useAuth(), since RootLayout is outside AuthProvider.`
+  - Bad: `// Set the loading state to true` (says nothing the code doesn't).

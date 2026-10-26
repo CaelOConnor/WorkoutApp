@@ -17,21 +17,17 @@ import { useExercises } from '@/workouts/use-exercises';
 export interface ExercisePickerProps {
   visible: boolean;
   onClose: () => void;
-  // Called with the chosen exercise, which may be one the user just created from the search.
   // The picker doesn't close itself: the caller decides.
   onPick: (exercise: Exercise) => void;
   // Exercises not to offer, e.g. the ones already in the workout.
   excludeIds?: readonly number[];
-  // Called once the picker has finished closing. Open another screen (e.g. a sheet) from here,
-  // not from onPick: iOS can't present a screen while the picker is still sliding away.
+  // Open another screen from here, not from onPick: iOS can't present a screen while the picker
+  // is still sliding away.
   onClosed?: () => void;
 }
 
-// Choose one exercise from GET /exercises, with a search box. When the search isn't exactly the
-// name of an exercise, 'Create "<search>"' at the top of the list opens a small form (name and
-// muscle group) in the same Modal, which creates the exercise and picks it. A view inside the
-// Modal rather than a separate screen, since iOS can't present a screen over an open Modal. Self-contained (it loads and creates its own data) and shown in a Modal, so any screen
-// can use it: logging a new workout, and adding an exercise to an existing one.
+// The New exercise form is a view inside the Modal, not a separate screen, because iOS can't
+// present a screen over an open Modal.
 export function ExercisePicker({
   visible,
   onClose,
@@ -58,8 +54,7 @@ export function ExercisePicker({
       onRequestClose={onClose}
       // iOS only: native code calls this when the slide-away animation has finished.
       onDismiss={onClosed}>
-      {/* A Modal is a separate native window, so it needs its own provider for safe-area
-          insets (e.g. the status bar on Android). */}
+      {/* A Modal is a separate native window, so it needs its own safe-area provider. */}
       <SafeAreaProvider>
         {/* Only mounted while open, so the search box starts empty every time. */}
         {visible ? (
@@ -70,16 +65,15 @@ export function ExercisePicker({
   );
 }
 
-// Required<Omit<...>>: the picker's props without `visible` and `onClosed` (the Modal handles
-// those), with excludeIds no longer optional.
+// Without visible and onClosed, which the Modal handles.
 type PickerContentProps = Required<Omit<ExercisePickerProps, 'visible' | 'onClosed'>>;
 
 function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
   const theme = useTheme();
   const exercises = useExercises();
   const [query, setQuery] = useState('');
-  // The name the "New exercise" form starts with while it's showing, else null (the list). The
-  // query stays in state underneath, so Back returns to the same search.
+  // Set while the New exercise form shows. The query stays in state underneath, so Back returns
+  // to the same search.
   const [newExerciseName, setNewExerciseName] = useState<string | null>(null);
 
   function results() {
@@ -105,7 +99,6 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
         keyExtractor={(exercise) => String(exercise.id)}
         // Lets a tap on a result go through while the keyboard is up, instead of only closing it.
         keyboardShouldPersistTaps="handled"
-        // Rendered above the first item, and scrolls with the list.
         ListHeaderComponent={
           newName === null ? null : (
             <Pressable
@@ -153,8 +146,7 @@ function PickerContent({ onClose, onPick, excludeIds }: PickerContentProps) {
           </View>
           <CreateExerciseForm
             initialName={newExerciseName}
-            // The form only opens from the loaded list, so data is there; `?? []` satisfies the
-            // type (data is `Exercise[] | undefined` to TypeScript).
+            // The form only opens from the loaded list, so `?? []` is just for the type.
             muscleGroups={muscleGroups(exercises.data ?? [])}
             onCreated={onPick}
           />

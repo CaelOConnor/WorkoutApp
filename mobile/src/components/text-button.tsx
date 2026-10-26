@@ -6,15 +6,13 @@ import { useTheme } from '@/hooks/use-theme';
 export interface TextButtonProps {
   label: string;
   onPress: () => void;
-  // The name screen readers announce, when it should differ from the visible label
-  // (e.g. '+ Log workout' is read as 'Log workout', '⋯' as 'Squat options').
+  // What screen readers say, when the visible label is a symbol or needs context.
   accessibilityLabel?: string;
   disabled?: boolean;
   color?: ThemeColor;
 }
 
-// A plain text button: in the navigation header (headerLeft / headerRight), and for small
-// actions inside a screen where a full Button would be too heavy.
+// For header buttons and small actions where a full Button would be too heavy.
 export function TextButton({
   label,
   onPress,

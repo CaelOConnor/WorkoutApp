@@ -12,9 +12,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { templateSummary } from '@/workouts/summary';
 import { useTemplates } from '@/workouts/use-templates';
 
-// History's "+ Log workout": start an empty workout, or one from a template. Shown as a sheet
-// (see SHEET_OPTIONS in _layout.tsx). A screen rather than an Alert: Android's alerts hold at most
-// three buttons, and there can be any number of templates.
+// A sheet, not an Alert, because Android alerts hold at most three buttons and there can be any
+// number of templates.
 export default function StartWorkoutSheet() {
   const router = useRouter();
   const theme = useTheme();
@@ -22,8 +21,7 @@ export default function StartWorkoutSheet() {
   // Shared with the sheet's Cancel, so a double tap opens one log screen and can't also cancel.
   const guard = usePressGuard();
 
-  // replace, not push: the log screen takes this sheet's place, so back from it goes to the
-  // history rather than to this chooser.
+  // replace, not push, so back from the log screen goes to the history, not this chooser.
   function start(templateId?: number) {
     guard.navigate(() =>
       router.replace(
@@ -47,8 +45,8 @@ export default function StartWorkoutSheet() {
             No templates yet. Make one in the Templates tab, or save a workout as one.
           </ThemedText>
         ) : (
-          // A plain View, not a FlatList: the sheet sizes itself to its content, and the list is
-          // short. (A long one would need a scrolling sheet.)
+          // A View, not a FlatList, since the sheet sizes itself to its content. A long list
+          // would need a scrolling sheet.
           <View>
             {templates.data.map((template) => {
               const summary = templateSummary(template);

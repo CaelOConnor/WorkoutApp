@@ -1,5 +1,4 @@
-// TanStack Query setup. Queries (useQuery) cache server data by key and refetch it when it may be
-// stale; this file configures when that happens.
+// TanStack Query setup: when to retry failed requests and when to refresh data.
 import { focusManager, QueryClient } from '@tanstack/react-query';
 import { AppState } from 'react-native';
 
@@ -7,8 +6,8 @@ import { ApiError, NetworkError } from './client';
 
 const MAX_RETRIES = 2;
 
-// Retry only failures that might go away on their own: no connection, or a server error (5xx).
-// A 4xx or an unreadable response would just fail the same way again.
+// Only retry failures that might fix themselves: no connection, or a server error.
+// A 4xx would just fail the same way again.
 export function shouldRetry(failureCount: number, error: Error): boolean {
   const transient =
     error instanceof NetworkError || (error instanceof ApiError && error.status >= 500);
@@ -19,15 +18,14 @@ export function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: { retry: shouldRetry },
-      // A failed mutation (e.g. saving a set) is shown to the user rather than silently retried.
+      // Never retry saves: a retry after a timeout could save the same thing twice.
       mutations: { retry: false },
     },
   });
 }
 
-// On the web, TanStack Query refetches stale queries when the browser tab regains focus. React
-// Native has no window focus event, so tell it about the app returning to the foreground instead.
-// setEventListener calls this once and keeps the returned cleanup function.
+// Refresh data when the app comes back to the foreground.
+// Phones have no browser-tab focus event, so this listens for the app becoming active instead.
 export function refetchOnAppForeground(): void {
   focusManager.setEventListener((setFocused) => {
     const subscription = AppState.addEventListener('change', (state) => {

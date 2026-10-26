@@ -4,7 +4,6 @@ import { useAuth } from '@/auth/auth-provider';
 import { AuthForm } from '@/components/auth-form';
 import { ThemedText } from '@/components/themed-text';
 
-// Only reachable while signed out (see Stack.Protected in _layout.tsx).
 export default function LoginScreen() {
   const { login } = useAuth();
 

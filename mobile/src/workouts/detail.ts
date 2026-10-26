@@ -1,4 +1,3 @@
-// Logic for the workout detail screen: grouping sets into exercise cards, and their text.
 import type { WorkoutDetailSet } from '@shared/models';
 
 export interface ExerciseGroup {
@@ -7,12 +6,9 @@ export interface ExerciseGroup {
   sets: WorkoutDetailSet[]; // in the API's order: by set_number within the exercise
 }
 
-// One group per exercise, in the order each exercise first appears. The API already sends each
-// exercise's sets together (exercises in the order they were added), so this just splits them into
-// cards. Grouped by exercise_id, not name: a custom exercise can share a built-in one's name, and
-// "Remove exercise" deletes by id.
+// By exercise_id, not name: a custom exercise can share a built-in one's name, and Remove
+// exercise deletes by id.
 export function groupSetsByExercise(sets: readonly WorkoutDetailSet[]): ExerciseGroup[] {
-  // A Map remembers insertion order, so its values come out in first-appearance order.
   const groups = new Map<number, ExerciseGroup>();
   for (const set of sets) {
     const group = groups.get(set.exercise_id);
@@ -29,18 +25,13 @@ export function groupSetsByExercise(sets: readonly WorkoutDetailSet[]): Exercise
   return [...groups.values()];
 }
 
-// 'Set 1 · 5 reps × 225 lb'. `index` is the set's position within its exercise (0-based), which
-// is what the user sees as the set number. The server keeps set_number equal to that position
-// (1..n per exercise, renumbered after a delete; see ROADMAP.md), but the screen relies on the
-// order it has, not on the stored number.
+// 'Set 1 · 5 reps × 225 lb'. Numbered by position in the list, not by the stored set_number.
 export function formatSetLine(set: WorkoutDetailSet, index: number): string {
   const reps = `${set.reps} ${set.reps === 1 ? 'rep' : 'reps'}`;
   return `Set ${index + 1} · ${reps} × ${set.weight} ${set.unit}`;
 }
 
-// The set that's in `after` but not in `before`: the one a POST .../sets just added. Compared by
-// id rather than position, since the new set goes after its exercise's last set, which isn't
-// necessarily the end of the list.
+// The set a POST .../sets just added. Found by id, since a new set isn't always last in the list.
 export function addedSet(
   before: readonly WorkoutDetailSet[],
   after: readonly WorkoutDetailSet[]
@@ -52,9 +43,7 @@ export function addedSet(
 // The largest id a Postgres INTEGER (SERIAL) can hold.
 const MAX_ID = 2_147_483_647;
 
-// A route param ('/workouts/42' gives '42') as an id, or null if it can't be one. Same rule as the
-// backend's parseId: digits only, no leading zero. A bad id then shows "not found" without asking
-// the server. Params can also arrive as string[] (a repeated query param) or be missing.
+// Same rule as the backend's parseId, so a bad id shows "not found" without asking the server.
 export function parseRouteId(value: string | string[] | undefined): number | null {
   if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) {
     return null;

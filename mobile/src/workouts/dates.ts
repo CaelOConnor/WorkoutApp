@@ -1,17 +1,11 @@
-// Calendar-date helpers for 'YYYY-MM-DD' strings, the format the API uses for workout dates.
-//
-// A workout date is a day on the calendar, not an instant in time, so it must never shift with the
-// phone's time zone. `new Date('2026-10-12')` is midnight UTC, which local getters like getDate()
-// report as 11 October anywhere west of London. So these helpers never use local getters on parsed
-// dates: they turn a date into a whole day number, do integer arithmetic, and format back with
-// the UTC getters (UTC has no offset and no daylight saving, so a day is always 86 400 000 ms).
+// A workout date is a calendar day and must never shift with time zone. new Date('2026-10-12') is
+// midnight UTC, which is 11 October west of London, so these work in day numbers and UTC getters.
 
 const MS_PER_DAY = 86_400_000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// Days since 1970-01-01. The API guard (isDateString) has already checked the format. Exported
-// for a chart's x axis too: the gap between two days on the axis is then the real number of days.
+// Days since 1970-01-01. Also the chart's x axis, so gaps between days show at their real size.
 export function dayNumber(date: string): number {
   const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
   return Date.UTC(year, month - 1, day) / MS_PER_DAY;
@@ -37,8 +31,8 @@ export function addDays(date: string, days: number): string {
 // target month doesn't have becomes its last day: 31 August minus 6 months is 28 February.
 export function addMonths(date: string, months: number): string {
   const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
-  // Date.UTC rolls a month past 12 (or below 1) into the next (or previous) year, so the month
-  // arithmetic needs no special cases. Day 0 of the month after is the last day of this one.
+  // Date.UTC rolls a month past 12 into the next year, so no special cases. Day 0 of the next
+  // month is the last day of this one.
   const first = new Date(Date.UTC(year, month - 1 + months, 1));
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   first.setUTCDate(Math.min(day, lastDay));
@@ -50,8 +44,7 @@ export function dateOfDayNumber(n: number): string {
   return toDateString(fromDayNumber(n));
 }
 
-// The Monday on or before `date`. getUTCDay() counts from Sunday (0), so shift it to count from
-// Monday: Monday -> 0, ..., Sunday -> 6.
+// The Monday on or before `date`. getUTCDay() counts from Sunday, so shift it to start on Monday.
 export function startOfWeek(date: string): string {
   const daysSinceMonday = (fromDayNumber(dayNumber(date)).getUTCDay() + 6) % 7;
   return addDays(date, -daysSinceMonday);
@@ -63,17 +56,14 @@ export function localDateString(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-// The Date a native date picker should show for 'YYYY-MM-DD': noon local time on that day.
-// Pickers work in local time, so this is the other place local time is right. Noon rather than
-// midnight: on a daylight-saving day, midnight can be skipped or repeated, and an hour's shift
-// would then land on the day before. localDateString() turns the picked Date back into a string.
+// For a native date picker, which works in local time. Noon, not midnight, because midnight can
+// be skipped or repeated on a daylight-saving day.
 export function localNoon(date: string): Date {
   const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
   return new Date(year, month - 1, day, 12);
 }
 
-// 'Mon, Oct 12'. Month names are spelled out here rather than with toLocaleDateString, which
-// depends on the JS engine's Intl data and so can differ between Hermes, Node and devices.
+// 'Mon, Oct 12'. Spelled out by hand because toLocaleDateString differs between JS engines.
 export function formatWorkoutDate(date: string): string {
   const d = fromDayNumber(dayNumber(date));
   return `${WEEKDAYS[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
@@ -84,9 +74,8 @@ export function formatFullDate(date: string): string {
   return `${formatWorkoutDate(date)}, ${date.slice(0, 4)}`;
 }
 
-// True for 'YYYY-MM-DD' naming a real day, the same rule as the backend's isDateString: a round
-// trip through a UTC date comes back unchanged only if the day exists ('2026-02-30' rolls over
-// to March 2). Postgres has no year 0, so '0000-...' is out too.
+// Same rule as the backend's isDateString: only a real day survives a round trip through a UTC
+// date ('2026-02-30' becomes March 2). Postgres has no year 0.
 export function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) {
     return false;
@@ -110,18 +99,12 @@ export interface WeekSection<T> {
   data: T[];
 }
 
-// Groups workouts into Monday-to-Sunday weeks, newest week first. Workouts keep their input order
-// within a week (the API sends newest first). Weeks with no workouts are left out.
-//
-// Generic over T: anything with a `date` works, so the screen passes WorkoutDetail and gets
-// WeekSection<WorkoutDetail> back, while tests can pass plain { id, date } objects.
-// `today` is a parameter rather than read from the clock, which keeps the function pure: the same
-// input always gives the same output, so tests don't depend on when they run.
+// Monday-to-Sunday weeks, newest first. `today` is a parameter, not the clock, so the result
+// doesn't depend on when it runs.
 export function groupByWeek<T extends { date: string }>(
   workouts: readonly T[],
   today: string
 ): WeekSection<T>[] {
-  // A Map keeps insertion order and is keyed by the week's Monday.
   const weeks = new Map<string, T[]>();
   for (const workout of workouts) {
     const weekStart = startOfWeek(workout.date);

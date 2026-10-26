@@ -7,9 +7,8 @@ import { useAuth } from './auth-provider';
 // screen may already have hidden itself. This runs as soon as the root layout imports this file.
 SplashScreen.preventAutoHideAsync();
 
-// Keeps the splash screen up until AuthProvider knows whether a token was saved, so the user
-// never sees the login screen flash before the home screen. Renders nothing.
-// Must be inside <AuthProvider>.
+// Keeps the splash screen up until the saved token has been read, so the login screen never
+// flashes before the home screen. Must be inside AuthProvider.
 export function SplashScreenController() {
   const { status } = useAuth();
 

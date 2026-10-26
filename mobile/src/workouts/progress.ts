@@ -1,11 +1,8 @@
-// Pure logic for the progress screens: which metric and date range to show, the request path,
-// and turning points into chart data and text. Kept out of the screens so it's unit-tested.
 import type { LoggedExercise, ProgressPoint, WeightUnit } from '@shared/models';
 
 import { addMonths, dayNumber } from './dates';
 
-// The three numbers each point carries. Extract<keyof X, ...> keeps only the listed keys, and
-// fails to compile if one of them stops being a key of ProgressPoint.
+// Extract fails to compile if either name stops being a key of ProgressPoint.
 export type Metric = Extract<keyof ProgressPoint, 'top_weight' | 'volume'>;
 
 export const METRICS: readonly { value: Metric; label: string }[] = [
@@ -15,8 +12,7 @@ export const METRICS: readonly { value: Metric; label: string }[] = [
 
 export const DEFAULT_METRIC: Metric = 'top_weight';
 
-// `as const` makes this a tuple of literals, and (typeof RANGES)[number] is the union of its
-// elements: '3M' | '6M' | '1Y' | 'All'. The type is derived from the list, so they can't drift.
+// The Range type comes from this list, so the two can't drift apart.
 export const RANGES = ['3M', '6M', '1Y', 'All'] as const;
 export type Range = (typeof RANGES)[number];
 
@@ -29,10 +25,8 @@ export function rangeStart(range: Range, today: string): string | null {
   return range === 'All' ? null : addMonths(today, -RANGE_MONTHS[range]);
 }
 
-// GET /exercises/:id/progress with only the parameters that are set: a missing unit lets the
-// server use the exercise's most recent one. Values are a unit or a 'YYYY-MM-DD' date, neither
-// of which needs URL encoding. The return type is a template literal type, "a string starting
-// with /", which is what the API client's request() accepts as a path.
+// A missing unit lets the server use the exercise's most recent one. Units and dates need no
+// URL encoding.
 export function progressPath(
   exerciseId: number,
   { unit, from }: { unit?: WeightUnit; from?: string }
@@ -41,9 +35,8 @@ export function progressPath(
   return `/exercises/${exerciseId}/progress${params.length > 0 ? `?${params.join('&')}` : ''}`;
 }
 
-// What the chart plots: x is the day number (so time gaps show as gaps), y the chosen metric.
-// A type alias, not an interface: Victory Native needs its data to be a Record<string, unknown>,
-// which an interface isn't (interfaces can be extended later, so TS won't assume no other keys).
+// x is the day number, so time gaps show as gaps. A type, not an interface, because Victory
+// Native needs a Record<string, unknown>, which an interface isn't.
 export type ChartPoint = { day: number; value: number };
 
 export function chartPoints(points: readonly ProgressPoint[], metric: Metric): ChartPoint[] {
@@ -62,12 +55,10 @@ export function bestPoint(
   );
 }
 
-// '1,325 lb'. The thousands are grouped by hand rather than with toLocaleString, whose output
-// depends on the JS engine's Intl data (see formatWorkoutDate in dates.ts).
+// '1,325 lb'. Grouped by hand because toLocaleString differs between JS engines.
 export function formatWeightValue(value: number, unit: WeightUnit): string {
   const [whole = '', decimals] = String(value).split('.');
-  // (?=(\d{3})+$) matches a position followed by a multiple of 3 digits up to the end; \B keeps
-  // it from matching at the very start.
+  // A comma before every group of three digits, counting from the end.
   const grouped = whole.replace(/\B(?=(\d{3})+$)/g, ',');
   return `${decimals ? `${grouped}.${decimals}` : grouped} ${unit}`;
 }

@@ -7,9 +7,7 @@ import { useApi } from '@/auth/auth-provider';
 
 export const EXERCISES_QUERY_KEY = ['exercises'] as const;
 
-// Every exercise the picker can offer (GET /exercises): the built-in ones and the user's own.
-// The list rarely changes, so it's considered fresh for 10 minutes: reopening the picker doesn't
-// refetch it each time.
+// The built-in exercises and the user's own. Fresh for 10 minutes, since the list rarely changes.
 export function useExercises() {
   const api = useApi();
   return useQuery({
@@ -19,7 +17,6 @@ export function useExercises() {
   });
 }
 
-// Creates a custom exercise (POST /exercises) and resolves with it.
 export function useCreateExercise() {
   const api = useApi();
   const queryClient = useQueryClient();
@@ -27,9 +24,8 @@ export function useCreateExercise() {
     mutationFn: (body: CreateExerciseBody) =>
       api.request('/exercises', { method: 'POST', body, guard: isExercise }),
     onSuccess: (exercise) => {
-      // Added to the cached list straight away, so it's there the next time the picker opens
-      // without waiting for a refetch. setQueryData's updater gets the current value, which is
-      // undefined if the list was never loaded; then there's nothing to add it to.
+      // Added to the cached list so the picker shows it without a refetch. The list is undefined
+      // if it was never loaded, and then there's nothing to add to.
       queryClient.setQueryData<Exercise[]>(EXERCISES_QUERY_KEY, (list) =>
         list ? [...list, exercise] : list
       );

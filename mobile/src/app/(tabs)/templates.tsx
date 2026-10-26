@@ -13,14 +13,13 @@ import { useTheme } from '@/hooks/use-theme';
 import { templateSummary } from '@/workouts/summary';
 import { useTemplates } from '@/workouts/use-templates';
 
-// The Templates tab: the user's templates, sorted by name (the server's order, ignoring case).
-// Only reachable while signed in.
+// The Templates tab. The server sorts them by name, ignoring case.
 export default function TemplatesScreen() {
   const router = useRouter();
   const templates = useTemplates();
-  // Ignores a second tap on a row or "+ New template" until this screen is shown again.
+  // Ignores a second tap until this screen is shown again.
   const guard = usePressGuard();
-  // True only during a pull-to-refresh, as on the history screen.
+  // Only true during pull-to-refresh, so background refreshes don't show a spinner.
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefresh() {
@@ -87,7 +86,7 @@ function TemplateRow({ template, onPress }: { template: TemplateDetail; onPress:
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      // One sentence for screen readers: "Leg day · Squat 3 · RDL 3 · Leg press 4".
+      // Read as one sentence by screen readers.
       accessibilityLabel={`${template.name} · ${summary}`}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.backgroundSelected }]}>
       <ThemedText>{template.name}</ThemedText>

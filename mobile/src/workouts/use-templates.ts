@@ -39,9 +39,8 @@ export function useTemplate(id: number | null) {
   });
 }
 
-// Puts a template the server just returned into the cache under its own key, so opening it next
-// needs no request, and refreshes the list (which may also have changed order, since it's sorted
-// by name). Returning the invalidation's promise makes mutateAsync wait for the fresh list.
+// Caches the saved template so opening it needs no request, and refreshes the list, whose order
+// may have changed. Returning the promise makes mutateAsync wait for the fresh list.
 function useCacheTemplate() {
   const queryClient = useQueryClient();
   return (template: TemplateDetail) => {
@@ -50,8 +49,7 @@ function useCacheTemplate() {
   };
 }
 
-// Creates a template (POST /templates) and resolves with it. A 409 (name taken) or 400 rejects
-// with an ApiError whose message the form shows.
+// A 409 (name taken) rejects with an ApiError whose message the form shows.
 export function useCreateTemplate() {
   const api = useApi();
   const cacheTemplate = useCacheTemplate();
@@ -88,10 +86,8 @@ export function useTemplateMutations(templateId: number) {
   };
 }
 
-// Last time for each exercise, to prefill new sets (GET /exercises/last-sets). Nothing is
-// requested for no ids, which the server would reject. The default staleTime of 0 means the log
-// screen refetches it whenever it opens, so a workout saved since then is taken into account
-// without any invalidation (as with the progress queries).
+// Nothing is requested for no ids, which the server would reject. staleTime 0 means it refetches
+// whenever the log screen opens, so a workout saved since then counts.
 export function useLastSets(exerciseIds: readonly number[]) {
   const api = useApi();
   return useQuery({
@@ -100,10 +96,8 @@ export function useLastSets(exerciseIds: readonly number[]) {
   });
 }
 
-// The same request on demand, for one exercise just picked (the log screen's picker, the detail
-// screen's "+ Add exercise"): resolves with that exercise's last sets, [] if never logged.
-// fetchQuery uses the cache only while it's fresh, and the default staleTime of 0 means never, so
-// this always asks the server: a set logged a minute ago counts.
+// For one exercise just picked. fetchQuery uses the cache only while it's fresh, which with
+// staleTime 0 is never, so a set logged a minute ago counts.
 export function useFetchLastSets() {
   const api = useApi();
   const queryClient = useQueryClient();

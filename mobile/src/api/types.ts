@@ -1,11 +1,6 @@
-// Runtime type guards for API responses, in the style of backend/src/validation.ts.
-//
-// `response.json()` returns `any`: TypeScript can't know what the server sent. These guards check
-// the shape at runtime and return `value is X` (a type predicate), so after a guard returns true
-// the value is narrowed from `unknown` to `X`. A server bug or version mismatch then fails loudly
-// in one place instead of as `undefined` deep inside a screen.
-//
-// Unlike the backend's request guards, these allow extra keys: a newer server adding a field
+// Guards for API responses, like backend/src/validation.ts but for what the server sends back.
+// A server bug or version mismatch fails here, in one place, instead of deep inside a screen.
+// Unlike the server's guards, extra keys are allowed: a newer server adding a field
 // shouldn't break an older app.
 
 import type {
@@ -27,7 +22,7 @@ import type {
 
 // ---------- Building blocks ----------
 
-// unknown -> Record<string, unknown>. typeof null and typeof [] are both 'object', so rule them out.
+// typeof null and arrays are also 'object', so both are ruled out.
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -36,7 +31,6 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-// Ids come from SERIAL columns, which start at 1.
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
@@ -45,7 +39,7 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
-// `T | null` columns. Missing (undefined) is not the same as null: the server always sends the key.
+// The server always sends these keys, so missing is not the same as null.
 function isStringOrNull(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
 }
@@ -54,8 +48,7 @@ function isPositiveIntegerOrNull(value: unknown): value is number | null {
   return value === null || isPositiveInteger(value);
 }
 
-// sets.weight is NUMERIC(6,2); the backend parses it to a number (db/pool.ts), e.g. 135 or 132.5.
-// typeof NaN and typeof Infinity are both 'number', so Number.isFinite does the real check.
+// Number.isFinite rules out NaN and Infinity, which are still numbers.
 function isWeight(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
@@ -64,17 +57,14 @@ function isWeightUnit(value: unknown): value is WeightUnit {
   return value === 'lb' || value === 'kg';
 }
 
-// DATE columns arrive as 'YYYY-MM-DD' (backend db/pool.ts). The server is trusted to send a real
-// calendar day; this only catches a format change, such as a full ISO timestamp.
+// Only checks the format. The server already makes sure it's a real day.
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isDateString(value: unknown): value is string {
   return typeof value === 'string' && DATE_PATTERN.test(value);
 }
 
-// A guard for a list, built from a guard for one item. The generic <T> carries the item type
-// through, so isListOf(isExercise) is itself a guard for Exercise[].
-// Array.isArray narrows to any[]; .every(guard) checks each element, so no `any` escapes.
+// Turns a guard for one item into a guard for a list of them.
 function isListOf<T>(guard: (item: unknown) => item is T) {
   return (value: unknown): value is T[] => Array.isArray(value) && value.every(guard);
 }
@@ -91,7 +81,7 @@ export function isPublicUser(value: unknown): value is PublicUser {
   return isRecord(value) && isPositiveInteger(value.id) && typeof value.email === 'string';
 }
 
-// POST /exercises (201)
+// POST /exercises
 export function isExercise(value: unknown): value is Exercise {
   return (
     isRecord(value) &&
@@ -118,7 +108,7 @@ function isWorkoutDetailSet(value: unknown): value is WorkoutDetailSet {
   );
 }
 
-// GET/PATCH /workouts/:id, POST /workouts/:id/sets, PATCH /workouts/:id/sets/:setId
+// GET and PATCH /workouts/:id, and the set routes
 export function isWorkoutDetail(value: unknown): value is WorkoutDetail {
   return (
     isRecord(value) &&
@@ -133,15 +123,13 @@ export function isWorkoutDetail(value: unknown): value is WorkoutDetail {
 // GET /workouts
 export const isWorkoutDetailList = isListOf(isWorkoutDetail);
 
-// Progress numbers are rounded weights (or sums of them): finite and never negative, like a weight.
 function isProgressPoint(value: unknown): value is ProgressPoint {
   return (
     isRecord(value) &&
     isDateString(value.date) &&
     isWeight(value.top_weight) &&
     isWeight(value.volume) &&
-    // A point only exists for a day with at least one counted set.
-    isPositiveInteger(value.sets)
+    isPositiveInteger(value.sets) // a point only exists for a day with at least one set
   );
 }
 
@@ -175,20 +163,18 @@ function isTemplateDetailExercise(value: unknown): value is TemplateDetailExerci
     isRecord(value) &&
     isPositiveInteger(value.exercise_id) &&
     typeof value.exercise_name === 'string' &&
-    // 1 to 20 on the server; only the lower bound matters here (0 sets would show nothing).
     isPositiveInteger(value.set_count)
   );
 }
 
-// POST /templates (201), GET and PUT /templates/:id
+// POST /templates, GET and PUT /templates/:id
 export function isTemplateDetail(value: unknown): value is TemplateDetail {
   return (
     isRecord(value) &&
     isPositiveInteger(value.id) &&
     isNonEmptyString(value.name) &&
-    // The server requires at least one exercise.
     Array.isArray(value.exercises) &&
-    value.exercises.length > 0 &&
+    value.exercises.length > 0 && // the server requires at least one exercise
     value.exercises.every(isTemplateDetailExercise)
   );
 }
@@ -196,7 +182,7 @@ export function isTemplateDetail(value: unknown): value is TemplateDetail {
 // GET /templates
 export const isTemplateDetailList = isListOf(isTemplateDetail);
 
-// One of last time's sets: only sets with 1+ reps are sent.
+// One of last time's sets. Only sets with 1+ reps are sent.
 function isLastSet(value: unknown): value is ExerciseLastSets['sets'][number] {
   return (
     isRecord(value) &&
@@ -211,27 +197,26 @@ function isExerciseLastSets(value: unknown): value is ExerciseLastSets {
     isRecord(value) &&
     isPositiveInteger(value.exercise_id) &&
     isDateString(value.date) &&
-    // An exercise with no counted sets is left out of the response, so each has at least one.
     Array.isArray(value.sets) &&
-    value.sets.length > 0 &&
+    value.sets.length > 0 && // exercises with no sets are left out by the server
     value.sets.every(isLastSet)
   );
 }
 
-// GET /exercises/last-sets?ids=
+// GET /exercises/last-sets
 export const isExerciseLastSetsList = isListOf(isExerciseLastSets);
 
-// POST /workouts (201): just the new workout's id.
+// POST /workouts: just the new workout's id.
 export function isCreateWorkoutResponse(value: unknown): value is CreateWorkoutResponse {
   return isRecord(value) && isPositiveInteger(value.id);
 }
 
-// The body of every 4xx/5xx the API itself sends.
+// The body of every error the server sends.
 export function isErrorResponse(value: unknown): value is ErrorResponse {
   return isRecord(value) && typeof value.error === 'string';
 }
 
-// DELETE responses are 204 with no body; the client passes `undefined` for those.
+// For DELETE: a 204 has no body, which the client turns into undefined.
 export function isNoContent(value: unknown): value is undefined {
   return value === undefined;
 }

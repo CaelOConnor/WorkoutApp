@@ -1,16 +1,12 @@
-// The one place the app talks to the backend. Every request goes through request<T>(), which:
-// - adds the Bearer token, if there is one
-// - turns every failure into one of three error classes the screens can tell apart
-// - checks the response body with a type guard, so callers get a real T, not `any`
+// The one place the app talks to the server. Every request goes through request<T>(), which
+// adds the login token, sorts failures into three error types, and checks the response with a guard.
 import { isErrorResponse } from './types';
 
-// Thrown when the API answered with an error status (4xx/5xx). `message` is the server's
-// { error } text when there is one, so screens can show it directly.
+// The server answered with an error status. message is the server's error text when there is one.
 export class ApiError extends Error {
   override name = 'ApiError';
 
-  // `readonly status: number` in the constructor is a "parameter property": it declares the
-  // field and assigns it in one go.
+  // readonly status in the constructor declares the field and sets it in one step.
   constructor(
     readonly status: number,
     message: string
@@ -19,13 +15,12 @@ export class ApiError extends Error {
   }
 }
 
-// Thrown when no response arrived: no connection, wrong API URL, server down, or a timeout.
+// No answer at all: no connection, wrong address, server down, or a timeout.
 export class NetworkError extends Error {
   override name = 'NetworkError';
 }
 
-// Thrown when a success response doesn't have the shape we expected: the app and the server
-// disagree about the API, which is a bug rather than something the user can fix.
+// The server said yes, but the data isn't the expected shape. A bug, not something the user can fix.
 export class InvalidResponseError extends Error {
   override name = 'InvalidResponseError';
 
@@ -34,45 +29,39 @@ export class InvalidResponseError extends Error {
   }
 }
 
-// PUT replaces a whole resource (PUT /templates/:id); PATCH changes only the fields sent.
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-// A function type for any type guard: given unknown, it says whether the value is a T.
+// Any type guard: takes unknown, says whether it's a T.
 export type Guard<T> = (value: unknown) => value is T;
 
 export interface RequestOptions<T> {
   method?: HttpMethod; // defaults to GET
   body?: unknown; // sent as JSON
-  // Required, so no response can reach the app unchecked. T is inferred from it:
-  // passing isWorkoutDetail makes request() return Promise<WorkoutDetail>.
+  // Required, so no response reaches the app unchecked. The guard also decides what request() returns.
   guard: Guard<T>;
 }
 
 export interface ApiClientConfig {
   baseUrl: string;
   getToken: () => string | null;
-  // Called when the server rejects the token (expired or invalid), e.g. to log out.
-  onUnauthorized: () => void;
+  onUnauthorized: () => void; // the token was rejected, so log out
   timeoutMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-// A 401 here means a wrong email or password, not a bad token, so it mustn't trigger a logout.
+// A 401 from login means a wrong password, not an expired token, so it shouldn't log out.
 const LOGIN_PATH = '/auth/login';
 
-// The result of trying to parse a body. A "discriminated union": checking `ok` tells TypeScript
-// which variant you have, and so whether `value` exists. JSON can legitimately be null or
-// false, so a separate flag is clearer than returning a special value for "not JSON".
+// Either the parsed body, or "not valid JSON". A flag is used because null and false are valid JSON.
 type ParsedBody = { ok: true; value: unknown } | { ok: false };
 
-// An empty body (204) parses as undefined, which the isNoContent guard accepts.
+// An empty body (a 204) counts as undefined.
 function parseBody(text: string): ParsedBody {
   if (text === '') {
     return { ok: true, value: undefined };
   }
   try {
-    // JSON.parse returns `any`; assigning it to `unknown` stops the `any` from spreading.
     const value: unknown = JSON.parse(text);
     return { ok: true, value };
   } catch {
@@ -83,8 +72,7 @@ function parseBody(text: string): ParsedBody {
 export function createApiClient(config: ApiClientConfig) {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  // `/${string}` is a template literal type: any string starting with '/'. So request('workouts')
-  // (which would build '...:3000workouts') is a compile error.
+  // path must start with '/', so a missing slash is a compile error.
   async function request<T>(path: `/${string}`, options: RequestOptions<T>): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     const token = config.getToken();
@@ -95,8 +83,7 @@ export function createApiClient(config: ApiClientConfig) {
       headers['Content-Type'] = 'application/json';
     }
 
-    // fetch has no timeout of its own, and a wrong LAN IP can hang for a long time.
-    // Aborting the controller makes fetch reject, which is caught below.
+    // fetch never times out on its own, so cancel it after timeoutMs.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -109,7 +96,7 @@ export function createApiClient(config: ApiClientConfig) {
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         signal: controller.signal,
       });
-      // The body streams in after the headers, so the connection can still fail while reading it.
+      // Reading the body can fail too, so it's inside the try.
       text = await response.text();
     } catch {
       throw new NetworkError(
@@ -125,7 +112,6 @@ export function createApiClient(config: ApiClientConfig) {
       if (response.status === 401 && path !== LOGIN_PATH) {
         config.onUnauthorized();
       }
-      // `parsed.ok &&` narrows the union first, so reading parsed.value is allowed.
       const message =
         parsed.ok && isErrorResponse(parsed.value)
           ? parsed.value.error
@@ -136,13 +122,11 @@ export function createApiClient(config: ApiClientConfig) {
     if (!parsed.ok || !options.guard(parsed.value)) {
       throw new InvalidResponseError(response.status);
     }
-    // The guard returned true, so TypeScript has narrowed parsed.value to T.
-    return parsed.value;
+    return parsed.value; // the guard passed, so this is a T
   }
 
   return { request };
 }
 
-// The client's type, derived from the factory rather than written out twice.
-// ReturnType<typeof f> is "whatever f returns".
+// The client's type, taken from what createApiClient returns.
 export type ApiClient = ReturnType<typeof createApiClient>;

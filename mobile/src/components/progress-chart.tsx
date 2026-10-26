@@ -1,6 +1,5 @@
-// The progress line chart. The only file that imports Victory Native and Skia, so Jest can swap
-// it for a placeholder (jest.setup.ts): Skia draws on the GPU, which doesn't exist in tests.
-// The screen also lists every point as text, which screen readers (and the tests) can read.
+// The only file that imports Victory Native and Skia, so Jest can swap it for a placeholder
+// (jest.setup.ts): Skia draws on the GPU, which doesn't exist in tests.
 import type { WeightUnit } from '@shared/models';
 import { Circle, Line as SkiaLine, matchFont, vec } from '@shopify/react-native-skia';
 import { useMemo, useState } from 'react';
@@ -20,7 +19,7 @@ export interface ProgressChartProps {
   unit: WeightUnit;
   // For dates in axis labels and the readout: the year is shown only when it isn't this one.
   currentYear: number;
-  // What a screen reader says for the whole chart, e.g. 'Est. 1RM chart, 12 workouts'.
+  // What a screen reader says for the whole chart, e.g. 'Volume chart, 12 days'.
   accessibilityLabel: string;
 }
 
@@ -28,21 +27,19 @@ const CHART_HEIGHT = 240;
 
 export function ProgressChart({ points, unit, currentYear, accessibilityLabel }: ProgressChartProps) {
   const theme = useTheme();
-  // Axis labels are drawn by Skia, which needs a Skia font. matchFont picks a system font, so the
-  // app needs no font file. useMemo makes it once, not on every render.
+  // Skia draws the axis labels and needs its own font. matchFont uses a system font, so the app
+  // needs no font file.
   const font = useMemo(
     () => matchFont({ fontFamily: Platform.select({ ios: 'Helvetica', default: 'sans-serif' }), fontSize: 12 }),
     []
   );
 
-  // Press and hold to read a point. The press position lives in Reanimated shared values, which
-  // change on the UI thread without re-rendering React. The initial values only set their types.
+  // The press position lives in Reanimated shared values, which change on the UI thread without
+  // re-rendering React. The initial values only set their types.
   const { state, isActive } = useChartPressState({ x: 0, y: { value: 0 } });
 
-  // The readout is ordinary React text, so the pressed point's index is copied into React state.
-  // useAnimatedReaction runs its first function on the UI thread whenever the shared values
-  // change, and its second when the result does; scheduleOnRN then calls setSelected back on the
-  // JS thread, where React state lives.
+  // The readout is React text, so the pressed index is copied into state. scheduleOnRN moves the
+  // call from the UI thread back to the JS thread, where React state lives.
   const [selected, setSelected] = useState<number | null>(null);
   useAnimatedReaction(
     () => (state.isActive.value ? state.matchedIndex.value : -1),
@@ -53,8 +50,7 @@ export function ProgressChart({ points, unit, currentYear, accessibilityLabel }:
     }
   );
 
-  // A vertical line at the pressed x. Skia components accept shared values as props and redraw
-  // when they change, still without a React render.
+  // Skia props accept shared values and redraw when they change, without a React render.
   const top = useDerivedValue(() => vec(state.x.position.value, 0));
   const bottom = useDerivedValue(() => vec(state.x.position.value, CHART_HEIGHT));
 
@@ -99,7 +95,7 @@ export function ProgressChart({ points, unit, currentYear, accessibilityLabel }:
                 <SkiaLine p1={top} p2={bottom} color={theme.textSecondary} strokeWidth={1} />
               ) : null}
               <Line points={plotted.value} color={theme.chart} strokeWidth={2} />
-              {/* radius 4: 8px dots, so a single workout (no line yet) still shows. */}
+              {/* Dots, so a single workout still shows before there's a line. */}
               <Scatter points={plotted.value} radius={4} color={theme.chart} />
               {isActive ? (
                 <Circle

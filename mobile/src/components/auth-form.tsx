@@ -18,15 +18,14 @@ export interface AuthFormProps {
   footer?: ReactNode;
 }
 
-// The email + password form shared by the login and signup screens.
+// Shared by the login and signup screens.
 export function AuthForm({ submitLabel, passwordAutoComplete, onSubmit, footer }: AuthFormProps) {
   const theme = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // A ref to the password field, so "next" on the email keyboard can move the cursor there.
-  // useRef<TextInput>(null) is typed as RefObject<TextInput | null>: empty until it mounts.
+  // So "next" on the email keyboard can move the cursor to the password.
   const passwordRef = useRef<TextInput>(null);
 
   async function handleSubmit() {

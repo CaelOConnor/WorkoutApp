@@ -3,8 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// A generic component: <T extends string> lets each use keep its own union type, so
-// onChange(value) is typed as Metric on one screen and Range on another, not as plain string.
+// Generic so onChange keeps each screen's own type, like Metric or Range, not plain string.
 export interface SegmentedControlProps<T extends string> {
   options: readonly { value: T; label: string }[];
   value: T;
@@ -13,8 +12,6 @@ export interface SegmentedControlProps<T extends string> {
   label: string;
 }
 
-// Choose one of a few options, shown side by side, like UnitPicker. Each option is a "radio" to
-// screen readers, with its checked state.
 export function SegmentedControl<T extends string>({
   options,
   value,

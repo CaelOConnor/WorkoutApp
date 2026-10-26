@@ -12,8 +12,7 @@ import { parseRouteId } from '@/workouts/detail';
 import { templateFormFrom } from '@/workouts/template-form';
 import { useTemplate, useTemplateMutations } from '@/workouts/use-templates';
 
-// Edit from a template's detail: the same form as "+ New template", starting from the saved
-// template, saved with PUT /templates/:id. Only reachable while signed in.
+// The New template form, starting from the saved template.
 export default function EditTemplateScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -55,8 +54,7 @@ export default function EditTemplateScreen() {
   );
 }
 
-// A separate component so its hooks only run once the template has loaded (as in
-// workouts/[id]/index.tsx): the form's starting state is built from it.
+// Its own component so the form's starting state can be built from the loaded template.
 function EditForm({ template }: { template: TemplateDetail }) {
   const router = useRouter();
   const { updateTemplate } = useTemplateMutations(template.id);

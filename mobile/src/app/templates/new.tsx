@@ -18,10 +18,7 @@ import {
 import { useCreateTemplate } from '@/workouts/use-templates';
 import { useWorkout } from '@/workouts/use-workouts';
 
-// A new template, saved with POST /templates. Two ways in:
-// - "+ New template" on the Templates tab: an empty form.
-// - "Save as template" on a workout: /templates/new?fromWorkout=3, the form prefilled from it.
-// Only reachable while signed in.
+// Empty from the Templates tab, or prefilled from a workout with ?fromWorkout=3.
 export default function NewTemplateScreen() {
   // A query param arrives like a path param: a string, a string[] if repeated, or undefined.
   const { fromWorkout } = useLocalSearchParams<{ fromWorkout?: string }>();
@@ -32,8 +29,7 @@ export default function NewTemplateScreen() {
   return <FromWorkout workoutId={parseRouteId(fromWorkout)} />;
 }
 
-// Waits for the workout (normally already cached by its detail screen, so no request), then
-// opens the form built from it.
+// Waits for the workout, usually already cached by its detail screen, then opens the form.
 function FromWorkout({ workoutId }: { workoutId: number | null }) {
   const router = useRouter();
   const workout = useWorkout(workoutId);
@@ -74,7 +70,7 @@ function WorkoutTemplateForm({ workout }: { workout: WorkoutDetail }) {
   return <NewTemplateForm initial={form} notice={cappedNote(cappedExercises)} />;
 }
 
-// "Squat had more than 20 sets; ..." for the exercises templateFromWorkout capped, or null.
+// A note naming the exercises templateFromWorkout capped, or null if there were none.
 function cappedNote(names: readonly string[]): string | null {
   if (names.length === 0) {
     return null;
@@ -95,8 +91,7 @@ function NewTemplateForm({ initial, notice }: { initial: TemplateForm; notice?: 
       notice={notice}
       save={(body) => createTemplate.mutateAsync(body)}
       saving={createTemplate.isPending}
-      // replace, not push: back from the new template goes to where the form was opened from
-      // (the list, or the workout), not to this form.
+      // replace, not push, so back from the new template skips this form.
       onSaved={(template) =>
         router.replace({ pathname: '/templates/[id]', params: { id: String(template.id) } })
       }

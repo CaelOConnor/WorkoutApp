@@ -28,12 +28,10 @@ import { setCountLabel } from '@/workouts/summary';
 import { useFetchLastSets } from '@/workouts/use-templates';
 import { useWorkout, useWorkoutMutations } from '@/workouts/use-workouts';
 
-// One workout: its date and notes, a card per exercise, and the ways to change them.
-// [id] is a dynamic segment: /workouts/3 opens this with id '3'. Only reachable while signed in.
+// One workout. /workouts/3 opens it with id '3'.
 export default function WorkoutDetailScreen() {
   const router = useRouter();
-  // URL params are always strings. The type argument describes them; it isn't checked at runtime,
-  // which is why parseRouteId checks the value.
+  // The type argument isn't checked at runtime, so parseRouteId checks the value.
   const { id } = useLocalSearchParams<{ id: string }>();
   const workoutId = parseRouteId(id);
   const workout = useWorkout(workoutId);
@@ -68,8 +66,8 @@ export default function WorkoutDetailScreen() {
   );
 }
 
-// A separate component so its hooks (useWorkoutMutations needs the id) only run once there's data:
-// hooks must run on every render of a component, so they can't sit after an early return.
+// Its own component so its hooks only run once there's data. Hooks can't come after an early
+// return, because they must run on every render.
 function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
   const router = useRouter();
   const theme = useTheme();
@@ -78,12 +76,10 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
   const groups = groupSetsByExercise(workout.sets);
   const id = String(workout.id);
 
-  // One guard for everything on this screen: a second tap (or a tap on something else) is
-  // ignored while a change, a dialog or a navigation from the first one is still going.
+  // One guard for the whole screen, so no two changes, dialogs or navigations overlap.
   const guard = usePressGuard();
 
-  // Runs a change through the guard and shows any failure in a dialog. Success needs nothing
-  // here: the mutation refreshes the data, and the screen re-renders from it.
+  // Success needs nothing here: the mutation refreshes the data and the screen re-renders.
   function change(failureTitle: string, action: Parameters<typeof guard.run>[0]) {
     void guard.run(async (leave) => {
       try {
@@ -94,8 +90,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
     });
   }
 
-  // The card's menu. ask() doubles as a simple cross-platform menu. "Remove exercise" then asks
-  // for confirmation.
+  // ask() doubles as a simple cross-platform menu.
   function exerciseMenuFlow(group: ExerciseGroup) {
     change('Could not remove exercise', async (leave) => {
       const choice = await ask(group.exerciseName, undefined, [
@@ -126,9 +121,8 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
     });
   }
 
-  // "+ Add exercise": the picker, then (once it has closed) the exercise's first set is saved and
-  // its sheet opens to fill in the numbers. The chosen exercise waits in a ref between the two:
-  // it's only read in an event handler, so it doesn't need to trigger a render like state would.
+  // The picked exercise waits here until the picker has closed. A ref, not state, since it's only
+  // read in an event handler and shouldn't cause a render.
   const [pickerOpen, setPickerOpen] = useState(false);
   const picked = useRef<Exercise | null>(null);
 
@@ -139,8 +133,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
       return; // the picker was cancelled
     }
     change('Could not add exercise', async (leave) => {
-      // Last time's sets, to start from its first one. Only a prefill: if it can't be loaded,
-      // the set starts at 0 × 0 as for an exercise never logged, rather than adding nothing.
+      // Only a prefill, so if last time can't be loaded the set starts at zero instead.
       const lastTime = await fetchLastSets(exercise.id).catch(() => []);
       const updated = await addSet.mutateAsync(firstSetBody(exercise.id, workout.sets, lastTime));
       const set = addedSet(workout.sets, updated.sets);
@@ -275,9 +268,7 @@ function WorkoutContent({ workout }: { workout: WorkoutDetail }) {
         }}
         onClosed={addExerciseFlow}
       />
-      {/* A button rather than a header item: the header already holds Edit (and the iOS back
-          button), and this is about the whole workout, like Delete below. Not offered for an
-          empty workout, since a template needs at least one exercise. */}
+      {/* Hidden for an empty workout, since a template needs at least one exercise. */}
       {groups.length > 0 ? (
         <Button
           label="Save as template"

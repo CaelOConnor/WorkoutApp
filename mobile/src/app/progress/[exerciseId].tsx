@@ -33,8 +33,7 @@ import { useExerciseProgress } from '@/workouts/use-progress';
 
 const RANGE_OPTIONS = RANGES.map((range) => ({ value: range, label: range }));
 
-// One exercise's progress: a metric over a date range, as a chart and as a list of days.
-// [exerciseId] is a dynamic segment: /progress/3 opens this for exercise 3.
+// One exercise's progress chart. /progress/3 opens it for exercise 3.
 export default function ProgressChartScreen() {
   const router = useRouter();
   const { exerciseId } = useLocalSearchParams<{ exerciseId: string }>();
@@ -42,10 +41,9 @@ export default function ProgressChartScreen() {
 
   const [metric, setMetric] = useState<Metric>(DEFAULT_METRIC);
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);
-  // undefined until the user picks one: the server then uses the unit last logged.
+  // undefined until the user picks a unit. Until then the server uses the unit last logged.
   const [unit, setUnit] = useState<WeightUnit | undefined>(undefined);
-  // "Today" is fixed when the screen opens, so the range doesn't shift while it's on screen.
-  // The initializer function runs only on the first render.
+  // Fixed when the screen opens, so the date range doesn't shift while it's on screen.
   const [today] = useState(() => localDateString());
 
   const progress = useExerciseProgress(id, { unit, from: rangeStart(range, today) ?? undefined });
@@ -92,7 +90,7 @@ export default function ProgressChartScreen() {
               onChange={setRange}
             />
           </View>
-          {/* The unit the server answered in, which is the requested one once there is one. */}
+          {/* The server's unit, since `unit` stays undefined until the user picks one. */}
           <UnitPicker value={data.unit} onChange={setUnit} size="compact" />
         </View>
 
@@ -143,8 +141,7 @@ function ProgressBody({
     );
   }
 
-  // at(-1) is the last point, typed `ProgressPoint | undefined` even after the length check above:
-  // TypeScript doesn't track array lengths. The stat tiles take an optional value instead of `!`.
+  // Still possibly undefined to TypeScript despite the length check, so Stat's value is optional.
   const latest = points.at(-1);
   const best = bestPoint(points, metric);
   const metricLabel = METRICS.find((m) => m.value === metric)?.label ?? metric;
@@ -166,8 +163,8 @@ function ProgressBody({
         accessibilityLabel={`${metricLabel} chart, ${points.length} ${points.length === 1 ? 'day' : 'days'}. Each day is listed below.`}
       />
       <View>
-        {/* Newest first, like the history. slice() copies first: reverse() changes the array
-            in place, and `points` belongs to the query cache. */}
+        {/* Newest first. slice() copies first, since reverse() changes the array in place and
+            `points` belongs to the query cache. */}
         {points
           .slice()
           .reverse()
@@ -202,7 +199,7 @@ function PointRow({ point, value }: { point: ProgressPoint; value: string }) {
   const date = formatWorkoutDate(point.date);
   const sets = setCountLabel(point.sets);
   return (
-    // accessible groups the row into one stop for screen readers, read as its label.
+    // accessible makes the row one stop for screen readers, read as its label.
     <View
       accessible
       accessibilityLabel={`${date}: ${value}, ${sets}`}

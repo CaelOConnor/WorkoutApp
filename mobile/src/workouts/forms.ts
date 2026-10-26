@@ -1,7 +1,4 @@
-// Form state for the detail screen's sheets, and turning it into request bodies.
-//
-// Text inputs hold strings, so a form keeps its values as text while the user types and only
-// converts them on Save. The parse functions check the same rules as the backend's validators,
+// Forms keep text while the user types and convert it on Save. The checks match the backend's,
 // so the user gets a clear message here instead of a generic 400.
 import type {
   AddSetBody,
@@ -14,8 +11,7 @@ import type {
 
 import { isCalendarDate } from './dates';
 
-// The result of parsing a form: the body to send, or a message to show. A discriminated union,
-// like ParsedBody in api/client.ts: checking `ok` tells TypeScript which fields exist.
+// The body to send, or a message to show.
 export type FormResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 // ---------- Sets ----------
@@ -26,8 +22,7 @@ export interface SetForm {
   unit: WeightUnit;
 }
 
-// The PATCH body the set sheet sends: every editable field, as numbers. Required<Pick<...>> would
-// also work, but spelling it out reads more clearly.
+// The PATCH body the set sheet sends.
 export interface SetValues {
   reps: number;
   weight: number;
@@ -36,10 +31,9 @@ export interface SetValues {
 
 const MAX_REPS = 2_147_483_647; // Postgres INTEGER
 const MAX_WEIGHT = 9999.99; // NUMERIC(6,2)
-// Digits, then optionally a point and one or two more: what NUMERIC(6,2) stores exactly.
+// At most 2 decimals, which NUMERIC(6,2) stores exactly.
 const WEIGHT_PATTERN = /^\d+(\.\d{1,2})?$/;
 
-// A number prints in its shortest form, so String(132.5) is '132.5' and String(225) is '225'.
 export function setFormFrom(set: WorkoutDetailSet): SetForm {
   return { reps: String(set.reps), weight: String(set.weight), unit: set.unit };
 }
@@ -47,8 +41,7 @@ export function setFormFrom(set: WorkoutDetailSet): SetForm {
 const REPS_ERROR = 'Reps must be a whole number.';
 const WEIGHT_ERROR = 'Weight must be a number up to 9999.99, with at most 2 decimals.';
 
-// Text -> number, or null if the text isn't valid. Kept private: callers use the error or parse
-// functions below, so the rule and its message can't drift apart.
+// Private, so callers use the functions below and a rule can't drift from its message.
 function parseReps(text: string): number | null {
   const trimmed = text.trim();
   const reps = Number(trimmed);
@@ -62,7 +55,6 @@ function parseWeight(text: string): number | null {
   return WEIGHT_PATTERN.test(normalized) && weight <= MAX_WEIGHT ? weight : null;
 }
 
-// One field's error message, or null if it's valid: for showing next to that field.
 export function repsError(text: string): string | null {
   return parseReps(text) === null ? REPS_ERROR : null;
 }
@@ -94,10 +86,8 @@ export function addSetBodyFrom(lastSet: WorkoutDetailSet): AddSetBody {
   };
 }
 
-// The first set of an exercise newly added to a saved workout, saved straight away so the set
-// sheet can open on it: last time's first set (GET /exercises/last-sets), which the user edits
-// if today differs. For an exercise never logged, a placeholder at 0 reps × 0 (valid for both
-// fields, and it stands out if left) in the workout's last unit (lb if it has no sets).
+// Saved straight away so the set sheet can open on it. Never logged: 0 reps at 0 weight, which
+// is valid and stands out if left.
 export function firstSetBody(
   exerciseId: number,
   workoutSets: readonly WorkoutDetailSet[],

@@ -1,6 +1,5 @@
-// DateField for Android (and any platform without its own file). iOS uses date-field.ios.tsx,
-// which Metro picks instead of this file there; TypeScript only sees this one, so its props type
-// is the one both share.
+// The Android DateField. TypeScript only sees this file, not the .ios one, so its props type is
+// the one both share.
 import { DateTimePicker } from '@expo/ui/community/datetime-picker';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -16,15 +15,11 @@ export interface DateFieldProps {
   onChange: (date: string) => void;
 }
 
-// A calendar day, picked with the native date picker from @expo/ui (included in Expo Go).
-// The picker works with Date objects in local time; the form works with 'YYYY-MM-DD' strings.
-// localNoon and localDateString convert between them, both in the phone's own time zone, which
-// is the zone the user means when they pick "Tuesday".
-// Here: a button showing the date, which opens the picker as a dialog.
+// The picker works in local time, the zone the user means when they pick "Tuesday".
+// localNoon and localDateString convert to and from 'YYYY-MM-DD'.
 export function DateField({ label, value, onChange }: DateFieldProps) {
   const theme = useTheme();
-  // The picker opens as a dialog when it mounts, so it's only rendered while open, and closes by
-  // unmounting.
+  // The picker opens as a dialog when it mounts, so it's only rendered while open.
   const [open, setOpen] = useState(false);
 
   return (

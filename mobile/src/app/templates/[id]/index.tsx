@@ -17,8 +17,7 @@ import { parseRouteId } from '@/workouts/detail';
 import { setCountLabel } from '@/workouts/summary';
 import { useTemplate, useTemplateMutations } from '@/workouts/use-templates';
 
-// One template: its exercises in order with their set counts, Start workout, Edit and Delete.
-// /templates/3 opens this with id '3'. Only reachable while signed in.
+// One template. /templates/3 opens it with id '3'.
 export default function TemplateDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -59,7 +58,7 @@ export default function TemplateDetailScreen() {
   );
 }
 
-// A separate component so useTemplateMutations (which needs the id) only runs once there's data.
+// Its own component so useTemplateMutations, which needs the id, only runs once there's data.
 function TemplateContent({ template }: { template: TemplateDetail }) {
   const router = useRouter();
   const theme = useTheme();
@@ -68,7 +67,7 @@ function TemplateContent({ template }: { template: TemplateDetail }) {
   // One guard for the screen: Edit, Start workout and Delete can't overlap or run twice.
   const guard = usePressGuard();
 
-  // The log screen, prefilled from this template. push, not replace: back returns here.
+  // push, not replace, so back from the log screen returns here.
   function startWorkout() {
     guard.navigate(() =>
       router.push({ pathname: '/workouts/new', params: { templateId: id } })
@@ -119,7 +118,7 @@ function TemplateContent({ template }: { template: TemplateDetail }) {
           return (
             <View
               key={exercise.exercise_id}
-              // One stop for screen readers ("Squat · 3 sets"); tests read the order from it.
+              // One stop for screen readers. Tests also read the exercise order from it.
               accessible
               accessibilityLabel={`${exercise.exercise_name} · ${sets}`}
               testID="template exercise"

@@ -12,21 +12,19 @@ import { useTheme } from '@/hooks/use-theme';
 import { useCreateExercise } from '@/workouts/use-exercises';
 
 export interface CreateExerciseFormProps {
-  // Prefilled into the Name field (the picker's search text).
+  // The picker's search text.
   initialName: string;
   // Quick choices for the muscle group, e.g. the ones existing exercises use.
   muscleGroups: readonly string[];
-  // Called with the exercise once the server has created it.
   onCreated: (exercise: Exercise) => void;
 }
 
-// The exercise picker's "New exercise" view: a name and an optional muscle group, saved with
-// POST /exercises. The muscle group is free text, with the existing groups as one-tap choices so
-// the same group isn't spelled three ways.
+// The muscle group is free text, with existing groups as one-tap choices so the same group isn't
+// spelled three ways.
 export function CreateExerciseForm({ initialName, muscleGroups, onCreated }: CreateExerciseFormProps) {
   const theme = useTheme();
   const createExercise = useCreateExercise();
-  // Stops a double tap on Create from sending two requests (see use-press-guard.ts).
+  // Stops a double tap on Create from sending two requests.
   const guard = usePressGuard();
   const [name, setName] = useState(initialName);
   const [muscleGroup, setMuscleGroup] = useState('');
@@ -34,14 +32,13 @@ export function CreateExerciseForm({ initialName, muscleGroups, onCreated }: Cre
   const trimmedName = name.trim();
   const trimmedGroup = muscleGroup.trim();
 
-  // Every edit goes through here: the error was about what was sent (e.g. a duplicate name), so
-  // it goes once the form changes.
+  // The error was about what was sent, like a duplicate name, so any edit clears it.
   function edit(apply: () => void) {
     apply();
     createExercise.reset();
   }
 
-  // The choice matching the field (ignoring case) shows as selected. Tapping it again clears it.
+  // Ignores case, so typed text that matches a choice shows it as selected.
   function isChosen(group: string) {
     return trimmedGroup.toLowerCase() === group.toLowerCase();
   }
@@ -49,10 +46,8 @@ export function CreateExerciseForm({ initialName, muscleGroups, onCreated }: Cre
   function submit() {
     void guard.run(async () => {
       try {
-        // mutateAsync resolves with the new exercise (or rejects), unlike mutate, which only
-        // reports through callbacks. The rejection is caught because createExercise.error already
-        // holds it for the message below; the catch just stops it being unhandled.
-        // `|| null`: a blank muscle group is sent as "none" (the server would also store '' as null).
+        // The catch only stops an unhandled rejection: createExercise.error already holds it for
+        // the message below.
         const exercise = await createExercise.mutateAsync({
           name: trimmedName,
           muscle_group: trimmedGroup || null,
@@ -81,8 +76,7 @@ export function CreateExerciseForm({ initialName, muscleGroups, onCreated }: Cre
         autoCorrect={false}
       />
       {muscleGroups.length > 0 ? (
-        // Radios to screen readers, like SegmentedControl, but they wrap onto several lines and
-        // none has to be selected.
+        // Radios to screen readers, but unlike SegmentedControl they wrap and none has to be chosen.
         <View accessibilityRole="radiogroup" accessibilityLabel="Muscle group choices" style={styles.choices}>
           {muscleGroups.map((group) => {
             const chosen = isChosen(group);

@@ -3,11 +3,8 @@ import { SymbolView } from 'expo-symbols';
 
 import { TABS } from '@/navigation/tabs';
 
-// The signed-in home: a tab bar with History, Progress and Templates. JS tabs (not native tabs,
-// which are still unstable in SDK 57 and have no header of their own): each tab gets a header
-// with its title, and its screen adds header buttons through <Stack.Screen options> as before.
-// Other signed-in screens (a workout, the log screen, a progress chart) are in the root Stack,
-// so they open over this whole layout, tab bar included.
+// The tab bar for signed-in users: History, Progress and Templates.
+// Other screens (a workout, the log screen, a chart) open on top of this, covering the tab bar.
 export default function TabsLayout() {
   return (
     <Tabs>
