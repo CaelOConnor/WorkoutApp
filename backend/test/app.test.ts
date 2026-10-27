@@ -16,6 +16,26 @@ describe('GET /', () => {
   });
 });
 
+describe('error shape', () => {
+  it('returns 404 with { error } for an unknown URL', async () => {
+    const res = await request(app).get('/no-such-route');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'Not found' });
+  });
+
+  // Before auth runs, so no token is needed to reach the JSON parser.
+  it('returns 400 with { error } for malformed JSON', async () => {
+    const res = await request(app)
+      .post('/auth/login')
+      .set('Content-Type', 'application/json')
+      .send('{"email": ');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid JSON' });
+  });
+});
+
 describe('POST /workouts', () => {
   // A valid body, so a 400 from validation can't hide whether auth ran.
   it('returns 401 with { error } when no token is sent', async () => {
