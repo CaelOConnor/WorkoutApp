@@ -65,7 +65,8 @@ export interface NewSetInput {
 }
 
 export interface CreateWorkoutBody {
-  date?: string;
+  // Required: the server's own "today" is UTC, which is already tomorrow on a US evening.
+  date: string;
   notes?: string;
   sets: NewSetInput[];
 }

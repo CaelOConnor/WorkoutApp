@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 
-// Must match the backend's port in backend/src/index.ts.
+// The backend's default port. If it runs on another one (PORT), set EXPO_PUBLIC_API_URL instead.
 const API_PORT = 3000;
 
 export interface ApiUrlSources {

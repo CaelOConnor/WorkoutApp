@@ -21,7 +21,7 @@ describe('POST /workouts', () => {
   it('returns 401 with { error } when no token is sent', async () => {
     const res = await request(app)
       .post('/workouts')
-      .send({ sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
+      .send({ date: '2026-10-07', sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -40,7 +40,7 @@ describe('POST /workouts', () => {
     const res = await request(app)
       .post('/workouts')
       .set('Authorization', authorization)
-      .send({ sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
+      .send({ date: '2026-10-07', sets: [{ exercise_id: 1, reps: 5, weight: 135 }] });
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: expect.any(String) });
@@ -49,10 +49,11 @@ describe('POST /workouts', () => {
   // it.each runs the same test once per row, so each bad body shows up as its own result.
   it.each([
     ['no body', undefined],
-    ['missing sets', { notes: 'leg day' }],
-    ['sets is not an array', { sets: 'lots' }],
-    ['set with a string weight', { sets: [{ exercise_id: 1, reps: 5, weight: '135' }] }],
-    ['set with an unknown unit', { sets: [{ exercise_id: 1, reps: 5, weight: 135, unit: 'st' }] }],
+    ['missing date', { sets: [{ exercise_id: 1, reps: 5, weight: 135 }] }],
+    ['missing sets', { date: '2026-10-07', notes: 'leg day' }],
+    ['sets is not an array', { date: '2026-10-07', sets: 'lots' }],
+    ['set with a string weight', { date: '2026-10-07', sets: [{ exercise_id: 1, reps: 5, weight: '135' }] }],
+    ['set with an unknown unit', { date: '2026-10-07', sets: [{ exercise_id: 1, reps: 5, weight: 135, unit: 'st' }] }],
   ])('returns 400 with { error } for %s', async (_label, body) => {
     const res = await request(app).post('/workouts').set('Authorization', authHeader(1)).send(body);
 

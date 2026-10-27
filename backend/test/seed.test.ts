@@ -11,14 +11,20 @@ describe('seed', () => {
     await resetDb();
   });
 
-  it('can run twice without duplicating exercises or users', async () => {
+  it('can run twice without duplicating exercises', async () => {
     await seed();
     await seed();
 
     // COUNT(*) comes back from pg as a string (it's a bigint), hence `string` and '5'.
     const exercises = await pool.query<{ count: string }>('SELECT COUNT(*) FROM exercises');
-    const users = await pool.query<{ count: string }>('SELECT COUNT(*) FROM users');
     expect(exercises.rows[0]?.count).toBe('5');
-    expect(users.rows[0]?.count).toBe('1');
+  });
+
+  // Users sign up in the app, so their passwords are real bcrypt hashes.
+  it('adds no users', async () => {
+    await seed();
+
+    const users = await pool.query<{ count: string }>('SELECT COUNT(*) FROM users');
+    expect(users.rows[0]?.count).toBe('0');
   });
 });

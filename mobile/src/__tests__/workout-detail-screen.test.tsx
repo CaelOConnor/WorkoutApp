@@ -326,7 +326,8 @@ it('edits the date and notes from the header', async () => {
 
   await fireEvent.press(await screen.findByRole('button', { name: 'Edit' }));
   await waitFor(() => expect(app.getPathname()).toBe('/workouts/3/edit'));
-  await fireEvent.changeText(await screen.findByLabelText('Date'), '2026-10-13');
+  // 20:00 on the 13th in Los Angeles is already the 14th in UTC, so this checks the local day is kept.
+  await fireEvent(await screen.findByTestId('date-picker'), 'dateChange', new Date(2026, 9, 13, 20, 0));
   await fireEvent.changeText(screen.getByLabelText('Notes'), '  ');
   await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
 

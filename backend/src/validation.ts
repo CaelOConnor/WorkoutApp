@@ -91,7 +91,7 @@ export function isNewSetInput(value: unknown): value is NewSetInput {
 export function isCreateWorkoutBody(value: unknown): value is CreateWorkoutBody {
   return (
     isRecord(value) &&
-    (value.date === undefined || isDateString(value.date)) &&
+    isDateString(value.date) &&
     (value.notes === undefined || typeof value.notes === 'string') &&
     Array.isArray(value.sets) &&
     value.sets.every(isNewSetInput)
@@ -266,8 +266,14 @@ export function parseTemplateBody(value: unknown): ParseResult<TemplateBody> {
   };
 }
 
-export function isAuthBody(value: unknown): value is AuthBody {
-  return isRecord(value) && isNonEmptyString(value.email) && isNonEmptyString(value.password);
+// Returns the body with the email trimmed and lowercased, or null if invalid. Signup and login
+// both use it, so "Cael@Test.com " and "cael@test.com" are the same account.
+export function parseAuthBody(value: unknown): AuthBody | null {
+  if (!isRecord(value) || typeof value.email !== 'string' || !isNonEmptyString(value.password)) {
+    return null;
+  }
+  const email = value.email.trim().toLowerCase();
+  return email.length > 0 ? { email, password: value.password } : null;
 }
 
 // Turns a URL id like '42' into 42, or null if it isn't a valid id.

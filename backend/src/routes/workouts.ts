@@ -44,7 +44,7 @@ workoutsRouter.post(
       const workoutId = await withTransaction(async (client) => {
         const workoutResult = await client.query<Pick<Workout, 'id'>>(
           'INSERT INTO workouts (user_id, date, notes) VALUES ($1, $2, $3) RETURNING id',
-          [user.id, date || new Date(), notes || null]
+          [user.id, date, notes || null]
         );
         const workout = workoutResult.rows[0];
         if (!workout) {

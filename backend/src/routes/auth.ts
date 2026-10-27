@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { DatabaseError } from 'pg';
 import pool from '../db/pool';
 import { JWT_SECRET } from '../middleware/auth';
-import { isAuthBody } from '../validation';
+import { parseAuthBody } from '../validation';
 import type { ErrorResponse, LoginResponse, PublicUser, User } from '../types/models';
 import type { NoParams } from './types';
 
@@ -17,10 +17,11 @@ authRouter.post(
     req: Request<NoParams, PublicUser | ErrorResponse, unknown>,
     res: Response<PublicUser | ErrorResponse>
   ) => {
-    if (!isAuthBody(req.body)) {
+    const body = parseAuthBody(req.body);
+    if (!body) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-    const { email, password } = req.body;
+    const { email, password } = body;
 
     try {
       // Only the hash is stored. 10 sets how slow bcrypt is, which makes guessing expensive.
@@ -51,10 +52,11 @@ authRouter.post(
     req: Request<NoParams, LoginResponse | ErrorResponse, unknown>,
     res: Response<LoginResponse | ErrorResponse>
   ) => {
-    if (!isAuthBody(req.body)) {
+    const body = parseAuthBody(req.body);
+    if (!body) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-    const { email, password } = req.body;
+    const { email, password } = body;
 
     try {
       const result = await pool.query<User>('SELECT * FROM users WHERE email = $1', [email]);

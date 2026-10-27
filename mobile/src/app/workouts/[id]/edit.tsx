@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { errorMessage } from '@/api/error-message';
 import { Button } from '@/components/button';
+import { DateField } from '@/components/date-field';
 import { Sheet } from '@/components/sheet';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -56,14 +57,10 @@ function WorkoutEditor({ workout }: { workout: WorkoutDetail }) {
 
   return (
     <Sheet title="Edit workout" guard={guard}>
-      <TextField
+      <DateField
         label="Date"
-        placeholder="YYYY-MM-DD"
         value={form.date}
-        onChangeText={(date) => setForm((current) => ({ ...current, date }))}
-        editable={!updateWorkout.isPending}
-        autoCorrect={false}
-        keyboardType="numbers-and-punctuation"
+        onChange={(date) => setForm((current) => ({ ...current, date }))}
       />
       <TextField
         label="Notes"
